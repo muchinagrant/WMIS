@@ -13,19 +13,22 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 from pathlib import Path
 import os
 from datetime import timedelta
+from dotenv import load_dotenv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-
+load_dotenv(BASE_DIR.parent / '.env')
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-ci!_!994g(g7a!t%t_gpdd@iyl3e7@pb*j1nyk!kz7csl$n08u')
+SECRET_KEY = os.environ.get('SECRET_KEY')
+if not SECRET_KEY:
+    raise ValueError("SECRET_KEY environment variable is required.")
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.environ.get('DEBUG', 'True') == 'True'
+DEBUG = os.environ.get('DEBUG', 'False') == 'True'
 
 ALLOWED_HOSTS = [
     'api.kicowasco.co.ke',
@@ -57,6 +60,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'corsheaders.middleware.CorsMiddleware',
     'core.middleware.CurrentUserMiddleware',
@@ -96,12 +100,15 @@ DATABASES = {
         'ENGINE': 'django.db.backends.postgresql',
         'NAME': os.environ.get('DB_NAME', 'kicowasco_db'),
         'USER': os.environ.get('DB_USER', 'postgres'),
-        'PASSWORD': os.environ.get('DB_PASSWORD', 'Kic0w@ssc0_Pg2025!'),
+        'PASSWORD': os.environ.get('DB_PASSWORD'),
         'HOST': os.environ.get('DB_HOST', 'localhost'),
         'PORT': os.environ.get('DB_PORT', '5432'),
     }
 }
 
+if not os.environ.get('DB_PASSWORD'):
+    raise ValueError("DB_PASSWORD environment variable is required.")
+    
 # Password validation
 # https://docs.djangoproject.com/en/6.0/ref/settings/#auth-password-validators
 
@@ -124,7 +131,7 @@ AUTHENTICATION_BACKENDS = [
 # --- Axes (brute force protection) ---
 AXES_FAILURE_LIMIT = 5              # Lock after 5 failed attempts
 AXES_COOLOFF_TIME = 1               # Lockout duration in hours
-AXES_LOCKOUT_TEMPLATE = '403.html'  # Optional custom lockout page
+# AXES_LOCKOUT_TEMPLATE = '403.html'  # Optional custom lockout page
 # AXES_LOCK_OUT_USING_USERNAME = True   # Optional: lock per username instead of IP
 # AXES_ONLY_USER_FAILURES = True        # Optional: track only username failures
 
@@ -158,6 +165,12 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",  # Vite default
 ]
 
+CSRF_TRUSTED_ORIGINS = [
+    "https://kicowasco.co.ke",
+    "https://kicowasco-frontend.vercel.app",
+    "https://kicowasco-backend.onrender.com",
+]
+
 # Simple JWT Configuration
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),
@@ -172,15 +185,25 @@ USE_I18N = True
 USE_TZ = True
 
 # Static files (CSS, JavaScript, Images)
-STATIC_URL = 'static/'
+STATIC_URL = '/static/'
+STATIC_ROOT = BASE_DIR / 'staticfiles'
+
+STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 # ─── Security Hardening (only active in production) ───────────────────────────────
 if not DEBUG:
     # Force HTTPS
     SECURE_SSL_REDIRECT = True
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
     # Secure cookies
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
+    
+    # Browser security headers
+    SECURE_CONTENT_TYPE_NOSNIFF = True
+    SECURE_REFERRER_POLICY = 'strict-origin-when-cross-origin'
+    X_FRAME_OPTIONS = 'DENY'
+
     # HSTS (HTTP Strict Transport Security)
     SECURE_HSTS_SECONDS = 31536000       # 1 year
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
