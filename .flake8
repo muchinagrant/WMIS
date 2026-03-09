@@ -1,0 +1,8 @@
+[flake8]
+max-line-length = 120
+ignore = E501,W293,W292
+exclude =
+    venv,
+    migrations,
+    __pycache__,
+    frontend
