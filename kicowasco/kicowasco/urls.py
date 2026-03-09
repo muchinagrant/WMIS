@@ -1,11 +1,20 @@
 from django.contrib import admin
 from django.urls import path, include
+from django.http import JsonResponse
 from rest_framework_simplejwt.views import (
     TokenObtainPairView,
     TokenRefreshView,
 )
 
+# Health check endpoint
+def health_check(request):
+    return JsonResponse({"status": "ok"})
+
+
 urlpatterns = [
+    # Health check route
+    path('health/', health_check),
+
     path('admin/', admin.site.urls),
     
     # JWT Authentication Endpoints
