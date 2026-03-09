@@ -1,45 +1,51 @@
-import React, { createContext, useState, useEffect } from 'react';
+import React, { createContext, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { jwtDecode } from 'jwt-decode';
+import api from '../api/axios';
 
 const AuthContext = createContext();
 
 export default AuthContext;
 
 export const AuthProvider = ({ children }) => {
-    // Initialize state from local storage to keep users logged in across page refreshes
-    const [authTokens, setAuthTokens] = useState(() => 
-        localStorage.getItem('authTokens') ? JSON.parse(localStorage.getItem('authTokens')) : null
+    const [authTokens, setAuthTokens] = useState(() =>
+        localStorage.getItem('authTokens')
+            ? JSON.parse(localStorage.getItem('authTokens'))
+            : null
     );
-    const [user, setUser] = useState(() => 
-        localStorage.getItem('authTokens') ? jwtDecode(localStorage.getItem('authTokens')) : null
-    );
+
+    const [user, setUser] = useState(() => {
+        const storedTokens = localStorage.getItem('authTokens');
+        if (!storedTokens) return null;
+
+        try {
+            const parsedTokens = JSON.parse(storedTokens);
+            return parsedTokens.access ? jwtDecode(parsedTokens.access) : null;
+        } catch (error) {
+            return null;
+        }
+    });
 
     const navigate = useNavigate();
 
     const loginUser = async (username, password) => {
         try {
-            const response = await fetch('http://localhost:8000/api/auth/token/', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ username, password })
-            });
+            const response = await api.post('/api/auth/token/', { username, password });
+            const data = response.data;
 
-            const data = await response.json();
+            setAuthTokens(data);
+            setUser(jwtDecode(data.access));
+            localStorage.setItem('authTokens', JSON.stringify(data));
+            navigate('/incidence');
 
-            if (response.status === 200) {
-                setAuthTokens(data);
-                setUser(jwtDecode(data.access));
-                localStorage.setItem('authTokens', JSON.stringify(data));
-                navigate('/incidence'); // Redirect to default tab after login
-                return { success: true };
-            } else {
-                return { success: false, message: 'Invalid credentials' };
-            }
+            return { success: true };
         } catch (error) {
-            return { success: false, message: 'Server error. Please try again later.' };
+            return {
+                success: false,
+                message:
+                    error.response?.data?.detail ||
+                    'Invalid credentials or server error. Please try again.'
+            };
         }
     };
 

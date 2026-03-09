@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useContext } from 'react';
 import { Formik, Form, Field, ErrorMessage } from 'formik';
 import * as Yup from 'yup';
 import api from '../api/axios';
@@ -22,13 +22,12 @@ const SummarySchema = Yup.object().shape({
 });
 
 const MonthlySummary = () => {
-    const [month, setMonth] = useState(new Date().getMonth() + 1);
-    const [year, setYear] = useState(new Date().getFullYear());
+    const currentYear = new Date().getFullYear();
     const [submitStatus, setSubmitStatus] = useState({ type: '', message: '' });
     const [isFetching, setIsFetching] = useState(false);
     const [isExporting, setIsExporting] = useState(false);
     const [selectedMonth, setSelectedMonth] = useState('');
-    const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+    const [selectedYear, setSelectedYear] = useState(currentYear);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
     
@@ -159,7 +158,7 @@ const MonthlySummary = () => {
             };
             
             // Save the report to backend
-            const response = await api.post('/api/monthly-summary/generate-report/', payload);
+            await api.post('/api/monthly-summary/generate-report/', payload);
             
             setSubmitStatus({ 
                 type: 'success', 
@@ -529,7 +528,7 @@ const MonthlySummary = () => {
                                     }}
                                     onChange={(e) => {
                                         setFieldValue('month', e.target.value);
-                                        setMonth(parseInt(e.target.value));
+
                                     }}
                                 >
                                     <option value="">Select Month...</option>
@@ -572,7 +571,6 @@ const MonthlySummary = () => {
                                     }} 
                                     onChange={(e) => {
                                         setFieldValue('year', e.target.value);
-                                        setYear(parseInt(e.target.value));
                                     }}
                                 />
                                 <ErrorMessage name="year" component="div" style={{ color: '#e11d48', fontSize: '0.85rem', marginTop: '5px' }} />

@@ -98,6 +98,8 @@ const SludgeManifest = () => {
                         metadata.hasLicenseNo = !!values.license_no;
                         metadata.hasFee = !!values.fee_paid;
                         break;
+                    default:
+                        break;
                 }
 
                 await addToQueue(endpoint, values, 'POST', metadata);
@@ -114,6 +116,9 @@ const SludgeManifest = () => {
                         break;
                     case 'license':
                         offlineMessage = 'License issuance saved offline. It will sync automatically when connection is restored.';
+                        break;
+                    default:
+                        offlineMessage = 'Saved offline. It will sync automatically when connection is restored.';
                         break;
                 }
                 
