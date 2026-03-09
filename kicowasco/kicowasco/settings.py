@@ -161,6 +161,7 @@ REST_FRAMEWORK = {
 CORS_ALLOWED_ORIGINS = [
     "https://kicowasco.co.ke",
     "https://kicowasco-frontend.vercel.app",
+    "https://wmis.vercel.app",
     "http://localhost:3000",
     "http://localhost:5173",  # Vite default
 ]
@@ -168,6 +169,7 @@ CORS_ALLOWED_ORIGINS = [
 CSRF_TRUSTED_ORIGINS = [
     "https://kicowasco.co.ke",
     "https://kicowasco-frontend.vercel.app",
+    "https://wmis.vercel.app",
     "https://kicowasco-backend.onrender.com",
 ]
 
