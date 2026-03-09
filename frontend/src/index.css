@@ -1,0 +1,227 @@
+/* src/index.css */
+
+/* 1. Global Reset & Modern Typography */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Inter', system-ui, -apple-system, sans-serif !important;
+    background-color: #f1f5f9 !important; /* Soft slate background */
+    color: #334155 !important;
+    -webkit-font-smoothing: antialiased;
+}
+
+/* 2. Main App Container (Floating Card Effect) */
+.container {
+    max-width: 1200px !important;
+    margin: 40px auto !important;
+    background: #ffffff !important;
+    border-radius: 16px !important;
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.01) !important;
+    border: 1px solid #e2e8f0 !important;
+    overflow: hidden !important;
+}
+
+/* 3. Sleek Enterprise Header */
+.kicowasco-header {
+    background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%) !important;
+    padding: 30px 40px !important;
+    border-bottom: none !important;
+}
+
+.kicowasco-header h1 {
+    font-size: 1.75rem !important;
+    font-weight: 700 !important;
+    letter-spacing: -0.025em !important;
+}
+
+.official-branding {
+    background: #f8fafc !important;
+    border-bottom: 1px solid #e2e8f0 !important;
+    padding: 20px !important;
+}
+
+.official-branding h3 {
+    color: #0f172a !important;
+    font-weight: 700 !important;
+    letter-spacing: 0.05em !important;
+}
+
+/* 4. Modernized Tab Navigation */
+.nav-tabs {
+    background: #ffffff !important;
+    border-bottom: 1px solid #e2e8f0 !important;
+    padding: 0 20px !important;
+    display: flex !important;
+    gap: 10px !important;
+    overflow-x: auto !important;
+    scrollbar-width: none !important; /* Hide scrollbar Firefox */
+}
+.nav-tabs::-webkit-scrollbar { display: none !important; } /* Hide scrollbar Chrome */
+
+.tab {
+    background: transparent !important;
+    color: #64748b !important;
+    font-weight: 600 !important;
+    padding: 16px 20px !important;
+    margin-bottom: -1px !important;
+    border-radius: 8px 8px 0 0 !important;
+    border-bottom: 3px solid transparent !important;
+    transition: all 0.2s ease !important;
+}
+
+.tab:hover {
+    color: #0f172a !important;
+    background: #f8fafc !important;
+}
+
+.tab.active {
+    color: #2563eb !important;
+    border-bottom: 3px solid #2563eb !important;
+    background: transparent !important;
+}
+
+/* 5. Inputs, Selects, and Textareas */
+input[type="text"], input[type="date"], input[type="time"], 
+input[type="number"], input[type="password"], select, textarea {
+    border-radius: 8px !important;
+    border: 1px solid #cbd5e1 !important;
+    padding: 12px 16px !important;
+    background-color: #f8fafc !important;
+    font-family: 'Inter', sans-serif !important;
+    font-size: 0.95rem !important;
+    color: #0f172a !important;
+    transition: all 0.2s ease !important;
+    outline: none !important;
+}
+
+input:hover, select:hover, textarea:hover {
+    border-color: #94a3b8 !important;
+}
+
+input:focus, select:focus, textarea:focus {
+    background-color: #ffffff !important;
+    border-color: #3b82f6 !important;
+    box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.15) !important;
+}
+
+input:disabled {
+    background-color: #f1f5f9 !important;
+    color: #94a3b8 !important;
+    border-style: dashed !important;
+}
+
+/* 6. Form Typography & Spacing */
+.content {
+    padding: 40px !important;
+    background: #ffffff !important;
+}
+
+h2 {
+    color: #0f172a !important;
+    font-weight: 700 !important;
+    font-size: 1.5rem !important;
+    border-bottom: 2px solid #f1f5f9 !important;
+    padding-bottom: 20px !important;
+    margin-bottom: 30px !important;
+}
+
+label {
+    color: #475569 !important;
+    font-weight: 600 !important;
+    font-size: 0.875rem !important;
+    margin-bottom: 8px !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.05em !important;
+}
+
+/* 7. Modern Buttons */
+.btn {
+    background-color: #2563eb !important;
+    color: #ffffff !important;
+    border-radius: 8px !important;
+    font-weight: 600 !important;
+    padding: 12px 28px !important;
+    letter-spacing: 0.025em !important;
+    transition: all 0.2s ease !important;
+    box-shadow: 0 4px 6px -1px rgba(37, 99, 235, 0.2), 0 2px 4px -2px rgba(37, 99, 235, 0.1) !important;
+}
+
+.btn:hover:not(:disabled) {
+    background-color: #1d4ed8 !important;
+    transform: translateY(-2px) !important;
+    box-shadow: 0 10px 15px -3px rgba(37, 99, 235, 0.3), 0 4px 6px -4px rgba(37, 99, 235, 0.2) !important;
+}
+
+.btn:active:not(:disabled) {
+    transform: translateY(0) !important;
+}
+
+.btn:disabled {
+    background-color: #94a3b8 !important;
+    box-shadow: none !important;
+    cursor: not-allowed !important;
+    opacity: 0.7 !important;
+}
+
+/* 8. Tables Upgrade */
+table {
+    border-collapse: separate !important;
+    border-spacing: 0 !important;
+    border-radius: 8px !important;
+    overflow: hidden !important;
+    border: 1px solid #e2e8f0 !important;
+}
+
+th {
+    background-color: #f8fafc !important;
+    color: #475569 !important;
+    font-weight: 600 !important;
+    text-transform: uppercase !important;
+    font-size: 0.75rem !important;
+    letter-spacing: 0.05em !important;
+    border-bottom: 1px solid #e2e8f0 !important;
+    padding: 16px !important;
+}
+
+td {
+    border-bottom: 1px solid #f1f5f9 !important;
+    padding: 12px 16px !important;
+    vertical-align: middle !important;
+}
+
+tbody tr:hover {
+    background-color: #f8fafc !important;
+}
+
+/* 9. Mobile Responsiveness */
+@media (max-width: 768px) {
+    .container {
+        margin: 0 !important;
+        border-radius: 0 !important;
+        box-shadow: none !important;
+    }
+
+    .content {
+        padding: 20px !important;
+    }
+
+    .grid-2 {
+        grid-template-columns: 1fr !important;
+        gap: 15px !important;
+    }
+
+    .signature-area {
+        flex-direction: column !important;
+        gap: 20px !important;
+    }
+
+    .kicowasco-header {
+        padding: 20px !important;
+        text-align: center !important;
+        justify-content: center !important;
+    }
+}
