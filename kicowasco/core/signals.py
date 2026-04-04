@@ -1,4 +1,6 @@
 # core/signals.py
+import json
+from django.core.serializers.json import DjangoJSONEncoder
 from django.db.models.signals import pre_save, post_save, post_delete
 from django.dispatch import receiver
 from django.forms.models import model_to_dict
@@ -10,8 +12,14 @@ AUDITABLE_MODELS = [Incident, Repair]
 
 def get_model_state(instance):
     """Helper to convert a model instance to a dictionary for JSON storage."""
-    # Exclude complex fields like images for the basic JSON audit log
-    return model_to_dict(instance, exclude=['supervisor_signature', 'foreman_signature_image'])
+    # 1. Get the raw dictionary
+    raw_dict = model_to_dict(instance, exclude=['supervisor_signature', 'foreman_signature_image'])
+    
+    # 2. Convert complex objects (like Datetimes and Decimals) to safe JSON strings
+    safe_json_string = json.dumps(raw_dict, cls=DjangoJSONEncoder)
+    
+    # 3. Return it as a dict so the JSONField can store it properly
+    return json.loads(safe_json_string)
 
 for model in AUDITABLE_MODELS:
     @receiver(pre_save, sender=model)
