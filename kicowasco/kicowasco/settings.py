@@ -100,7 +100,7 @@ WSGI_APPLICATION = 'kicowasco.wsgi.application'
 DATABASES = {
     'default': dj_database_url.config(
         default=f"postgres://{os.environ.get('DB_USER', 'postgres')}:{os.environ.get('DB_PASSWORD', '')}@{os.environ.get('DB_HOST', 'localhost')}:{os.environ.get('DB_PORT', '5432')}/{os.environ.get('DB_NAME', 'kicowasco_db')}",
-        conn_max_age=600,
+        conn_max_age=0,  # Changed from 600 to 0 to prevent hanging on dead Neon connections
         conn_health_checks=True,
     )
 }
