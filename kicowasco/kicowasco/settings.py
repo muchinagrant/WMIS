@@ -12,6 +12,7 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 
 from pathlib import Path
 import os
+import dj_database_url
 from datetime import timedelta
 from dotenv import load_dotenv
 
@@ -95,19 +96,19 @@ WSGI_APPLICATION = 'kicowasco.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
+# Database logic: prioritize DATABASE_URL (for Neon/Supabase), fallback to individual env vars
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': os.environ.get('DB_NAME', 'kicowasco_db'),
-        'USER': os.environ.get('DB_USER', 'postgres'),
-        'PASSWORD': os.environ.get('DB_PASSWORD'),
-        'HOST': os.environ.get('DB_HOST', 'localhost'),
-        'PORT': os.environ.get('DB_PORT', '5432'),
-    }
+    'default': dj_database_url.config(
+        default=f"postgres://{os.environ.get('DB_USER', 'postgres')}:{os.environ.get('DB_PASSWORD', '')}@{os.environ.get('DB_HOST', 'localhost')}:{os.environ.get('DB_PORT', '5432')}/{os.environ.get('DB_NAME', 'kicowasco_db')}",
+        conn_max_age=600,
+        conn_health_checks=True,
+    )
 }
 
-if not os.environ.get('DB_PASSWORD'):
-    raise ValueError("DB_PASSWORD environment variable is required.")
+# Remove or comment out the manual ValueError for DB_PASSWORD 
+# because DATABASE_URL might contain it already.
+# if not os.environ.get('DB_PASSWORD'):
+#     raise ValueError("DB_PASSWORD environment variable is required.")
     
 # Password validation
 # https://docs.djangoproject.com/en/6.0/ref/settings/#auth-password-validators
