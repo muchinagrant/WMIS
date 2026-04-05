@@ -1,8 +1,15 @@
 from rest_framework import viewsets
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.parsers import MultiPartParser, FormParser
-from core.models import Incident, Repair
-from .serializers import IncidentSerializer, RepairSerializer
+from core.models import (
+    Incident, Repair, Inspection, TreatmentLog, Exhauster, 
+    License, SludgeCollection, ConnectionReport
+)
+from .serializers import (
+    IncidentSerializer, RepairSerializer, InspectionSerializer,
+    TreatmentLogSerializer, ExhausterSerializer, LicenseSerializer,
+    SludgeCollectionSerializer, ConnectionReportSerializer
+)
 
 class IncidentViewSet(viewsets.ModelViewSet):
     """
@@ -38,3 +45,39 @@ class RepairViewSet(viewsets.ModelViewSet):
         as the technician of the repair.
         """
         serializer.save(technician=self.request.user)
+
+
+class InspectionViewSet(viewsets.ModelViewSet):
+    queryset = Inspection.objects.all().order_by('-start_date')
+    serializer_class = InspectionSerializer
+    permission_classes = [IsAuthenticated]
+
+
+class TreatmentLogViewSet(viewsets.ModelViewSet):
+    queryset = TreatmentLog.objects.all().order_by('-report_date')
+    serializer_class = TreatmentLogSerializer
+    permission_classes = [IsAuthenticated]
+
+
+class ExhausterViewSet(viewsets.ModelViewSet):
+    queryset = Exhauster.objects.all().order_by('reg_no')
+    serializer_class = ExhausterSerializer
+    permission_classes = [IsAuthenticated]
+
+
+class LicenseViewSet(viewsets.ModelViewSet):
+    queryset = License.objects.all().order_by('-end_date')
+    serializer_class = LicenseSerializer
+    permission_classes = [IsAuthenticated]
+
+
+class SludgeCollectionViewSet(viewsets.ModelViewSet):
+    queryset = SludgeCollection.objects.all().order_by('-collection_date')
+    serializer_class = SludgeCollectionSerializer
+    permission_classes = [IsAuthenticated]
+
+
+class ConnectionReportViewSet(viewsets.ModelViewSet):
+    queryset = ConnectionReport.objects.all().order_by('-start_date')
+    serializer_class = ConnectionReportSerializer
+    permission_classes = [IsAuthenticated]
