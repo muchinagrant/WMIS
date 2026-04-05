@@ -38,7 +38,11 @@ const RepairForm = ({ incidentId = null, userRole = 'technician' }) => {
         formData.append('location', values.location);
         formData.append('description_of_work', values.description_of_work);
         formData.append('materials_used', values.materials_used);
-        formData.append('incident', incidentId);
+        
+        // Only append incident if it exists (to avoid sending "null" string)
+        if (incidentId) {
+          formData.append('incident', incidentId);
+        }
         
         // Append the file if it exists
         if (photoFile) {
