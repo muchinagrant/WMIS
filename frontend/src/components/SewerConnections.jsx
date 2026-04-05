@@ -46,7 +46,7 @@ const SewerConnections = () => {
         try {
             if (isOnline) {
                 // Assuming an endpoint for batch submitting connections
-                const response = await api.post('/api/connections/batch/', values);
+                const response = await api.post('/api/connections/', values);
                 
                 if (response.status === 201 || response.status === 200) {
                     setSubmitStatus({ type: 'success', message: 'Connection applications updated successfully!' });
@@ -84,7 +84,7 @@ const SewerConnections = () => {
                 }
 
                 // Add to queue with metadata
-                await addToQueue('/api/connections/batch/', cleanedValues, 'POST', {
+                await addToQueue('/api/connections/', cleanedValues, 'POST', {
                     isConnectionBatch: true,
                     applicationCount: cleanedValues.applications.length,
                     ward: cleanedValues.ward,
