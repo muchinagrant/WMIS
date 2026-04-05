@@ -47,9 +47,18 @@ const InspectionTable = () => {
         setStatusMsg({ type: '', text: '' });
         
         try {
+            // 1. Clean data to prevent 400 errors (Convert empty strings to null for numbers)
+            const cleanedValues = {
+                ...values,
+                entries: values.entries.map(entry => ({
+                    ...entry,
+                    length_m: entry.length_m === '' ? null : parseFloat(entry.length_m)
+                }))
+            };
+
             if (isOnline) {
-                // Send the master inspection record and its nested entries in one payload
-                const response = await api.post('/inspections/', values);
+                // 2. FIX THE 404: Added the /api/ prefix and use cleanedValues
+                const response = await api.post('/api/inspections/', cleanedValues);
                 
                 if (response.status === 201 || response.status === 200) {
                     setStatusMsg({ type: 'success', text: 'Inspection log submitted successfully!' });
@@ -66,11 +75,20 @@ const InspectionTable = () => {
                 error.message === 'Network offline' ||
                 error.code === 'ERR_NETWORK') {
                 
-                // Save inspection data to queue with metadata
-                await addToQueue('/inspections/', values, 'POST', {
+                // 1. Re-calculate cleanedValues for offline if needed (or use from try block scope)
+                const cleanedValues = {
+                    ...values,
+                    entries: values.entries.map(entry => ({
+                        ...entry,
+                        length_m: entry.length_m === '' ? null : parseFloat(entry.length_m)
+                    }))
+                };
+
+                // 3. Update the offline queue URL too!
+                await addToQueue('/api/inspections/', cleanedValues, 'POST', {
                     isInspection: true,
-                    entryCount: values.entries.length,
-                    hasNotes: !!values.notes
+                    entryCount: cleanedValues.entries.length,
+                    hasNotes: !!cleanedValues.notes
                 });
                 
                 await refreshQueueCount(); // Update the UI counter
@@ -78,7 +96,7 @@ const InspectionTable = () => {
                 setStatusMsg({ 
                     type: 'info', 
                     text: 'Inspection saved offline. It will sync automatically when connection is restored. ' +
-                          `(${values.entries.length} inspection entries queued)`
+                          `(${cleanedValues.entries.length} inspection entries queued)`
                 });
                 
                 // Reset form after offline save
