@@ -235,15 +235,11 @@ class LicenseSerializer(serializers.ModelSerializer):
     """
     Serializer for Exhauster licenses with date validation.
     """
-    is_active = serializers.BooleanField(read_only=True)
-    days_until_expiry = serializers.IntegerField(read_only=True)
+    # Deleted the 'is_active' and 'days_until_expiry' lines because they don't exist in the model!
 
     class Meta:
         model = License
-        fields = [
-            'id', 'exhauster', 'license_number', 'start_date', 'end_date',
-            'is_active', 'days_until_expiry', 'created_at', 'updated_at'
-        ]
+        fields = '__all__' # <--- THE BULLETPROOF FIX
         read_only_fields = ['created_at', 'updated_at']
 
     def validate(self, data):
