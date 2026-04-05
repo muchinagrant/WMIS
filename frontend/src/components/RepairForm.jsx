@@ -59,9 +59,12 @@ const RepairForm = ({ incidentId = null, userRole = 'technician' }) => {
           formData.append('supervisor_signature', photoFile);
         }
         
-        // Send the formData directly. Axios will automatically detect FormData 
-        // and set the correct "multipart/form-data" header
-        const repairRes = await api.post('/api/repairs/', formData);
+        // Send the formData with explicit multipart header to override the global JSON rule
+        const repairRes = await api.post('repairs/', formData, {
+          headers: { 
+            'Content-Type': 'multipart/form-data' 
+          }
+        });
         const newRepairId = repairRes.data.id;
 
         setStatusMsg({ 
