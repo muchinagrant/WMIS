@@ -129,9 +129,6 @@ class Repair(models.Model):
         return f"Repair #{self.id} - {self.location} ({self.completion_date})"
 
 
-
-
-
 # --- INSPECTION MODELS ---
 class Inspection(models.Model):
     """
