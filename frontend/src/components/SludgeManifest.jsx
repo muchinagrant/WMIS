@@ -41,7 +41,7 @@ const SludgeManifest = () => {
         const fetchExhausters = async () => {
             try {
                 // Using the endpoint from the updated views
-                const response = await api.get('/exhausters/');
+                const response = await api.get('/api/exhausters/');
                 // Handle both paginated and non-paginated responses
                 setExhausters(response.data.results || response.data);
             } catch (error) {
@@ -288,7 +288,7 @@ const SludgeManifest = () => {
                         validationSchema={CollectionSchema}
                         onSubmit={(values, { resetForm, setSubmitting }) => {
                             handleGenericSubmit(
-                                '/sludge-collections/', 
+                                '/api/sludge-collections/', 
                                 values, 
                                 resetForm, 
                                 'Manifest completed successfully!',
@@ -444,7 +444,7 @@ const SludgeManifest = () => {
                         validationSchema={ExhausterSchema}
                         onSubmit={(values, { resetForm, setSubmitting }) => {
                             handleGenericSubmit(
-                                '/exhausters/', 
+                                '/api/exhausters/', 
                                 values, 
                                 resetForm, 
                                 'Exhauster registered successfully!',
@@ -556,7 +556,7 @@ const SludgeManifest = () => {
                         validationSchema={LicenseSchema}
                         onSubmit={(values, { resetForm, setSubmitting }) => {
                             handleGenericSubmit(
-                                '/licenses/', 
+                                '/api/licenses/', 
                                 values, 
                                 resetForm, 
                                 'License issued successfully!',
