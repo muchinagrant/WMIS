@@ -19,8 +19,7 @@ router.register(r'connections', ConnectionReportViewSet, basename='connection')
 
 # Custom routes for summary endpoints
 summary_patterns = [
-    path('monthly-summary/', SummaryViewSet.as_view({'get': 'list'}), name='monthly-summary'),
-    path('monthly-summary/generate-report/', SummaryViewSet.as_view({'post': 'generate_report'}), name='generate-report'),
+    path('monthly-summary/', SummaryViewSet.as_view(), name='monthly-summary'),
 ]
 
 # The API URLs are now determined automatically by the router.

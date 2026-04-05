@@ -1,4 +1,4 @@
-from rest_framework import viewsets, status
+from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.response import Response
@@ -85,14 +85,14 @@ class ConnectionReportViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
 
 
-class SummaryViewSet(viewsets.ViewSet):
+class SummaryViewSet(APIView):
     """
     API endpoint for monthly summary reports.
     Provides aggregated data for presentation purposes.
     """
     permission_classes = [IsAuthenticated]
 
-    def list(self, request):
+    def get(self, request):
         """
         Get monthly summary data based on year and month query parameters.
         """
@@ -120,15 +120,19 @@ class SummaryViewSet(viewsets.ViewSet):
                 "total_effluent": 42000,
                 "avg_bod_removal": 85.5,
                 "avg_tss_removal": 92.3,
-                "avg_ph_influent": 7.2,
-                "avg_ph_effluent": 7.1,
-                "total_alerts": 2,
+                "avg_bod_removal_percent": 85.5,
+                "avg_tss_removal_percent": 92.3,
+                "days_with_alerts": 2,
             },
             "sludge": {
-                "total_collections": 25,
-                "total_volume": 1250,
+                "total_volume_m3": 1250,
+                "breakdown": {
+                    "residential": 650,
+                    "institutional": 350,
+                    "commercial": 250,
+                },
+                "collections_count": 25,
                 "active_exhausters": 8,
-                "valid_licenses": 7,
             },
             "period": {
                 "year": int(year),
@@ -139,8 +143,7 @@ class SummaryViewSet(viewsets.ViewSet):
 
         return Response(mock_data)
 
-    @action(detail=False, methods=['post'])
-    def generate_report(self, request):
+    def post(self, request):
         """
         Generate and return a PDF report (mock implementation).
         """
