@@ -2,7 +2,7 @@ from rest_framework import serializers
 from .models import (
     Repair, Attachment, Inspection, InspectionEntry, 
     TreatmentLog, TreatmentParameter, Incident, User,
-    Exhauster, License, SludgeCollection
+    Exhauster, License, SludgeCollection, ConnectionReport, ConnectionApplication
 )
 
 
@@ -501,3 +501,37 @@ class UserProfileSerializer(serializers.ModelSerializer):
         first = obj.first_name[0] if obj.first_name else ''
         last = obj.last_name[0] if obj.last_name else ''
         return (first + last).upper() or obj.username[0].upper()
+
+
+# --- SEWER CONNECTION SERIALIZERS ---
+
+class ConnectionApplicationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ConnectionApplication
+        exclude = ('report',)  # Will be linked automatically
+
+class ConnectionReportSerializer(serializers.ModelSerializer):
+    applications = ConnectionApplicationSerializer(many=True)
+
+    class Meta:
+        model = ConnectionReport
+        fields = '__all__'
+        read_only_fields = ('prepared_by', 'created_at', 'updated_at')
+
+    def create(self, validated_data):
+        # Extract the nested applications array
+        applications_data = validated_data.pop('applications', [])
+        
+        # Assign the currently logged-in user
+        request = self.context.get('request', None)
+        if request and hasattr(request, "user"):
+            validated_data['prepared_by'] = request.user
+            
+        # Create the parent report
+        report = ConnectionReport.objects.create(**validated_data)
+        
+        # Create all the child applications
+        for app_data in applications_data:
+            ConnectionApplication.objects.create(report=report, **app_data)
+            
+        return report
