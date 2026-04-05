@@ -287,9 +287,17 @@ const SludgeManifest = () => {
                         initialValues={initialCollectionValues}
                         validationSchema={CollectionSchema}
                         onSubmit={(values, { resetForm, setSubmitting }) => {
+                            // 1. Clean the optional fields: convert empty strings to null
+                            const cleanedValues = {
+                                ...values,
+                                users: values.users === '' ? null : parseInt(values.users, 10),
+                                last_emptied: values.last_emptied === '' ? null : values.last_emptied
+                            };
+
+                            // 2. Send the cleaned values
                             handleGenericSubmit(
                                 '/api/sludge-collections/', 
-                                values, 
+                                cleanedValues, 
                                 resetForm, 
                                 'Manifest completed successfully!',
                                 'collection'
