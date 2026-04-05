@@ -24,25 +24,11 @@ const RepairForm = ({ incidentId = null, userRole = 'technician' }) => {
   // 4. Extract offline states from context
   const { isOnline, refreshQueueCount } = useContext(SyncContext);
 
-  // Helper function to handle photo upload
-  const uploadPhoto = async (repairId, photo) => {
-    const formData = new FormData();
-    formData.append('file', photo);
-    formData.append('content_type', 'repair');
-    formData.append('object_id', repairId);
-    
-    await api.post('/api/attachments/', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' }
-    });
-  };
-
   // 5. Updated offline-capable repair submission handler
   const handleCreateRepair = async (values, { setSubmitting, resetForm }) => {
     setStatusMsg({ type: 'info', message: 'Processing repair submission...' });
     
     try {
-      const payload = { ...values, incident: incidentId };
-      
       if (isOnline) {
         // Online flow - submit as FormData to handle file uploads
         const formData = new FormData();
