@@ -46,7 +46,7 @@ const RepairForm = ({ incidentId = null, userRole = 'technician' }) => {
         }
         
         // Send the formData with explicit multipart header to override the global JSON rule
-        const repairRes = await api.post('repairs/', formData, {
+        const repairRes = await api.post('/api/repairs/', formData, {
           headers: { 
             'Content-Type': 'multipart/form-data' 
           }
