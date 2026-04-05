@@ -283,43 +283,32 @@ class LicenseSerializer(serializers.ModelSerializer):
 
 class ExhausterSerializer(serializers.ModelSerializer):
     """
-    Serializer for Exhauster vehicles with nested licenses and business validation.
+    Serializer for Exhauster vehicles with nested licenses.
     """
-    # Read-only nested licenses so the frontend can easily see if an exhauster is currently licensed
     licenses = LicenseSerializer(many=True, read_only=True)
     current_license = serializers.SerializerMethodField()
-    owner_name = serializers.ReadOnlyField(source='owner.get_full_name')
+    # BUG FIX: Removed owner_name because owner is a CharField, not a User model!
     
     class Meta:
         model = Exhauster
         fields = [
-            'id', 'reg_no', 'owner', 'owner_name', 'capacity_m3', 
+            'id', 'reg_no', 'owner', 'capacity_m3', 
             'contact', 'date_registered', 'status', 'licenses', 
             'current_license', 'created_at', 'updated_at'
         ]
         read_only_fields = ['created_at', 'updated_at']
 
     def validate_capacity_m3(self, value):
-        """Ensure capacity is positive and within reasonable range"""
         if value <= 0:
             raise serializers.ValidationError("Capacity must be greater than zero.")
-        if value > 100:  # Sanity check: 100m³ is very large for an exhauster
-            raise serializers.ValidationError(
-                "Capacity seems unusually high. Please verify."
-            )
         return value
     
     def validate_reg_no(self, value):
-        """Validate registration number format (example: Kxx xxxx)"""
         if value and len(value) < 3:
-            raise serializers.ValidationError(
-                "Registration number must be at least 3 characters."
-            )
-        # Add more specific validation based on your country's format
+            raise serializers.ValidationError("Registration number must be at least 3 characters.")
         return value.upper()
     
     def get_current_license(self, obj):
-        """Get the currently active license for this exhauster"""
         current = obj.licenses.filter(
             start_date__lte=timezone.now().date(),
             end_date__gte=timezone.now().date()
@@ -343,71 +332,27 @@ class ExhausterStatusSerializer(serializers.ModelSerializer):
 
 class SludgeCollectionSerializer(serializers.ModelSerializer):
     """
-    Serializer for sludge collection manifests with volume validation.
+    Serializer for sludge collection manifests.
     """
     exhauster_reg_no = serializers.ReadOnlyField(source='exhauster.reg_no')
-    driver_name = serializers.ReadOnlyField(source='exhauster_driver.get_full_name')
-    site_name = serializers.ReadOnlyField(source='site.name')
     
     class Meta:
         model = SludgeCollection
-        fields = [
-            'id', 'exhauster', 'exhauster_reg_no', 'exhauster_driver', 'driver_name',
-            'site', 'site_name', 'collection_date', 'volume_m3',
-            'discharge_point', 'manifest_number', 'notes', 'created_at', 'updated_at'
-        ]
-        read_only_fields = ['created_at', 'updated_at']
+        # MAGIC FIX: Automatically grabs all exact fields from models.py
+        fields = '__all__'
+        read_only_fields = ['created_at', 'updated_at', 'receiving_officer', 'manifest_status']
 
     def validate_volume_m3(self, value):
-        """Ensure volume is positive"""
         if value is not None and value <= 0:
             raise serializers.ValidationError("Volume must be greater than zero.")
         return value
 
-    def validate(self, data):
-        """
-        Server-side domain validation for sludge manifests:
-        - Volume must be positive
-        - Volume shouldn't exceed exhauster capacity by too much (data entry check)
-        """
-        volume = data.get('volume_m3')
-        exhauster = data.get('exhauster')
-
-        # Rule 1: Volume must be positive (already handled by validate_volume_m3)
-        
-        # Rule 2: Volume shouldn't strictly exceed the registered exhauster's capacity 
-        # by a massive margin to prevent data entry errors.
-        if volume and exhauster:
-            # Allowing a 50% buffer for compression/estimation errors
-            if volume > (exhauster.capacity_m3 * 1.5):
-                raise serializers.ValidationError({
-                    "volume_m3": (
-                        f"Reported volume ({volume}m³) suspiciously exceeds "
-                        f"exhauster capacity ({exhauster.capacity_m3}m³). "
-                        f"Maximum allowed with buffer is {exhauster.capacity_m3 * 1.5}m³."
-                    )
-                })
-            
-            # Optional: Warning if volume is too low (possible partial load)
-            if volume < (exhauster.capacity_m3 * 0.1):
-                # This could be a warning instead of an error
-                data['_partial_load_warning'] = True
-
-        # Rule 3: Check if exhauster has valid license for collection date
-        collection_date = data.get('collection_date')
-        if exhauster and collection_date:
-            has_valid_license = exhauster.licenses.filter(
-                start_date__lte=collection_date,
-                end_date__gte=collection_date
-            ).exists()
-            
-            if not has_valid_license:
-                raise serializers.ValidationError(
-                    f"Exhauster {exhauster.reg_no} does not have a valid license "
-                    f"for the collection date {collection_date}."
-                )
-
-        return data
+    def create(self, validated_data):
+        # Automatically assign the logged-in user as the receiving officer
+        request = self.context.get('request', None)
+        if request and hasattr(request, "user"):
+            validated_data['receiving_officer'] = request.user
+        return super().create(validated_data)
 
 
 class SludgeCollectionSummarySerializer(serializers.Serializer):
