@@ -346,13 +346,13 @@ class SludgeCollectionSerializer(serializers.ModelSerializer):
     Serializer for sludge collection manifests with volume validation.
     """
     exhauster_reg_no = serializers.ReadOnlyField(source='exhauster.reg_no')
-    driver_name = serializers.ReadOnlyField(source='driver.get_full_name')
+    driver_name = serializers.ReadOnlyField(source='exhauster_driver.get_full_name')
     site_name = serializers.ReadOnlyField(source='site.name')
     
     class Meta:
         model = SludgeCollection
         fields = [
-            'id', 'exhauster', 'exhauster_reg_no', 'driver', 'driver_name',
+            'id', 'exhauster', 'exhauster_reg_no', 'exhauster_driver', 'driver_name',
             'site', 'site_name', 'collection_date', 'volume_m3',
             'discharge_point', 'manifest_number', 'notes', 'created_at', 'updated_at'
         ]
