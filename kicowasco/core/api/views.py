@@ -1,6 +1,8 @@
-from rest_framework import viewsets
+from rest_framework import viewsets, status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.parsers import MultiPartParser, FormParser
+from rest_framework.response import Response
+from rest_framework.decorators import action
 from core.models import (
     Incident, Repair, Inspection, TreatmentLog, Exhauster, 
     License, SludgeCollection, ConnectionReport
@@ -81,3 +83,70 @@ class ConnectionReportViewSet(viewsets.ModelViewSet):
     queryset = ConnectionReport.objects.all().order_by('-start_date')
     serializer_class = ConnectionReportSerializer
     permission_classes = [IsAuthenticated]
+
+
+class SummaryViewSet(viewsets.ViewSet):
+    """
+    API endpoint for monthly summary reports.
+    Provides aggregated data for presentation purposes.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def list(self, request):
+        """
+        Get monthly summary data based on year and month query parameters.
+        """
+        year = request.query_params.get('year')
+        month = request.query_params.get('month')
+
+        if not year or not month:
+            return Response(
+                {"error": "Both 'year' and 'month' query parameters are required."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Mock data for presentation - in a real app, this would aggregate from actual models
+        mock_data = {
+            "collection": {
+                "inspection_incidences": 12,
+                "spillage_incidences": 3,
+                "repairs_completed": 8,
+                "new_connections": 15,
+                "total_incidents": 15,
+                "resolved_incidents": 11,
+            },
+            "treatment": {
+                "total_influent": 45000,
+                "total_effluent": 42000,
+                "avg_bod_removal": 85.5,
+                "avg_tss_removal": 92.3,
+                "avg_ph_influent": 7.2,
+                "avg_ph_effluent": 7.1,
+                "total_alerts": 2,
+            },
+            "sludge": {
+                "total_collections": 25,
+                "total_volume": 1250,
+                "active_exhausters": 8,
+                "valid_licenses": 7,
+            },
+            "period": {
+                "year": int(year),
+                "month": int(month),
+                "month_name": "March",  # Would be calculated based on month number
+            }
+        }
+
+        return Response(mock_data)
+
+    @action(detail=False, methods=['post'])
+    def generate_report(self, request):
+        """
+        Generate and return a PDF report (mock implementation).
+        """
+        # In a real implementation, this would generate an actual PDF
+        # For now, just return success
+        return Response({
+            "message": "Report generated successfully",
+            "download_url": "/api/monthly-summary/download/mock-report.pdf"
+        })
