@@ -44,14 +44,25 @@ const RepairForm = ({ incidentId = null, userRole = 'technician' }) => {
       const payload = { ...values, incident: incidentId };
       
       if (isOnline) {
-        // Online flow - submit directly to API
-        const repairRes = await api.post('/api/repairs/', payload);
-        const newRepairId = repairRes.data.id;
+        // Online flow - submit as FormData to handle file uploads
+        const formData = new FormData();
         
-        // Upload photo if attached
+        // Append all text fields
+        formData.append('completion_date', values.completion_date);
+        formData.append('location', values.location);
+        formData.append('description_of_work', values.description_of_work);
+        formData.append('materials_used', values.materials_used);
+        formData.append('incident', incidentId);
+        
+        // Append the file if it exists
         if (photoFile) {
-          await uploadPhoto(newRepairId, photoFile);
+          formData.append('supervisor_signature', photoFile);
         }
+        
+        // Send the formData directly. Axios will automatically detect FormData 
+        // and set the correct "multipart/form-data" header
+        const repairRes = await api.post('/api/repairs/', formData);
+        const newRepairId = repairRes.data.id;
 
         setStatusMsg({ 
           type: 'success', 
