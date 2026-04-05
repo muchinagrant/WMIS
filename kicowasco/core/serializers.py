@@ -1,3 +1,4 @@
+from django.utils import timezone
 from rest_framework import serializers
 from .models import (
     Repair, Attachment, Inspection, InspectionEntry, 
@@ -320,8 +321,8 @@ class ExhausterSerializer(serializers.ModelSerializer):
     def get_current_license(self, obj):
         """Get the currently active license for this exhauster"""
         current = obj.licenses.filter(
-            start_date__lte=obj.get_current_date(),
-            end_date__gte=obj.get_current_date()
+            start_date__lte=timezone.now().date(),
+            end_date__gte=timezone.now().date()
         ).first()
         if current:
             return LicenseSerializer(current).data
