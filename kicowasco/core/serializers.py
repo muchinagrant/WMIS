@@ -239,7 +239,7 @@ class LicenseSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = License
-        fields = '__all__' # <--- THE BULLETPROOF FIX
+        fields = '__all__'  # <--- THE BULLETPROOF FIX
         read_only_fields = ['created_at', 'updated_at']
 
     def validate(self, data):
