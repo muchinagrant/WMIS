@@ -3,6 +3,7 @@ from rest_framework import serializers
 from .models import (
     Repair, Attachment, Inspection, InspectionEntry, 
     TreatmentLog, TreatmentParameter, Incident, User,
+    Exhauster, License, SludgeCollection, ConnectionReport, ConnectionApplication
 )
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
