@@ -4,20 +4,16 @@ from django.conf import settings
 
 
 class User(AbstractUser):
-    """
-    Custom User model extending Django's built-in AbstractUser.
-    This allows us to implement Role-Based Access Control (RBAC) for the system.
-    """
+    # Aligned with the Organogram Grades
     ROLE_CHOICES = [
-        ('technician', 'Technician'),
-        ('operator', 'Operator'),
-        ('inspector', 'Inspector'),
-        ('driver', 'Driver'),
-        ('supervisor', 'Supervisor'),
-        ('admin', 'Admin'),
+        ('superintendent', 'Superintendent (Grade 3)'),
+        ('supervisor', 'Supervisor (Grade 4)'),
+        ('lab_tech', 'Lab Technologist (Grade 4)'),
+        ('operator', 'Operator (Grade 5)'),
+        ('attendant', 'Attendant/Plumber (Grade 6)'),
+        ('admin', 'System Admin'),
     ]
-
-    role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='technician')
+    role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='attendant')
 
     def __str__(self):
         return f"{self.username} ({self.get_role_display()})"
@@ -530,3 +526,81 @@ class ConnectionApplication(models.Model):
 
     def __str__(self):
         return f"{self.applicant_name} - {self.get_connection_type_display()}"
+
+
+# --- NEW: F201 WEEKLY LINE PATROLS ---
+class WeeklyLinePatrol(models.Model):
+    ABNORMALITY_CHOICES = [
+        ('none', 'None'),
+        ('erosion', 'Erosion along lines'),
+        ('missing_cover', 'Broken/Missing Manhole Cover'),
+        ('blockage', 'Blockage'),
+        ('overflow', 'Overflow/Spillage'),
+        ('other', 'Other (Specify in remarks)')
+    ]
+
+    date = models.DateField()
+    time = models.TimeField()
+    drainage_area = models.CharField(max_length=200)
+    sewer_line_ref = models.CharField(max_length=100)
+    attendant = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name='patrols')
+    
+    abnormality_observed = models.CharField(max_length=50, choices=ABNORMALITY_CHOICES, default='none')
+    abnormality_details = models.TextField(blank=True, help_text="Specify if 'Other' or add details")
+    
+    # Tracking new customer connections found during patrol
+    new_mother_accounts = models.PositiveIntegerField(default=0)
+    new_child_accounts = models.PositiveIntegerField(default=0)
+    
+    corrective_action_taken = models.TextField(blank=True)
+    further_action_required = models.TextField(blank=True)
+    
+    supervisor_signature = models.ImageField(upload_to='signatures/patrols/', null=True, blank=True)
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+
+
+# --- NEW: F203A INLET WORKS (SCREENS & GRIT) ---
+class InletWorksDailyTask(models.Model):
+    date = models.DateField()
+    attendant = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name='inlet_tasks')
+    
+    # Raking Screenings (T1, T2, T3 represents time shifts)
+    raking_t1 = models.BooleanField(default=False)
+    raking_t2 = models.BooleanField(default=False)
+    raking_t3 = models.BooleanField(default=False)
+    
+    screenings_burial = models.BooleanField(default=False)
+    grit_scooping = models.BooleanField(default=False)
+    grit_burial = models.BooleanField(default=False)
+    
+    abnormalities = models.TextField(blank=True)
+    operator_signature = models.ImageField(upload_to='signatures/inlet/', null=True, blank=True)
+
+
+# --- NEW: F203C INLET WORKS (FLOW MEASUREMENT) ---
+class DailyFlowRecord(models.Model):
+    date = models.DateField(unique=True)
+    attendants = models.ManyToManyField(settings.AUTH_USER_MODEL, related_name='flow_records')
+    remarks = models.TextField(blank=True)
+
+    @property
+    def average_daily_flow(self):
+        # Calculate average of all linked readings
+        readings = self.readings.all()
+        if not readings:
+            return 0
+        total = sum((r.meter_1 + r.meter_2) for r in readings)
+        return total / len(readings)
+
+class FlowReading(models.Model):
+    TIME_CHOICES = [
+        ('09:00', '9:00 AM'),
+        ('12:00', '12:00 PM'),
+        ('15:00', '3:00 PM'),
+        ('18:00', '6:00 PM'),
+    ]
+    daily_record = models.ForeignKey(DailyFlowRecord, on_delete=models.CASCADE, related_name='readings')
+    time_slot = models.CharField(max_length=10, choices=TIME_CHOICES)
+    meter_1 = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    meter_2 = models.DecimalField(max_digits=10, decimal_places=2, default=0)

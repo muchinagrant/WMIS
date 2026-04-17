@@ -9,7 +9,9 @@ from core.serializers import (
     TreatmentLogSerializer, TreatmentParameterSerializer,
     ExhausterSerializer, LicenseSerializer, SludgeCollectionSerializer,
     ConnectionReportSerializer, ConnectionApplicationSerializer,
-    UserSerializer, IncidentSerializer, RepairSerializer
+    UserSerializer, IncidentSerializer, RepairSerializer,
+    CustomTokenObtainPairSerializer, WeeklyLinePatrolSerializer,
+    InletWorksDailyTaskSerializer, DailyFlowRecordSerializer, FlowReadingSerializer
 )
 
 User = get_user_model()
@@ -20,5 +22,7 @@ __all__ = [
     'InspectionSerializer', 'InspectionEntrySerializer',
     'TreatmentLogSerializer', 'TreatmentParameterSerializer',
     'ExhausterSerializer', 'LicenseSerializer', 'SludgeCollectionSerializer',
-    'ConnectionReportSerializer', 'ConnectionApplicationSerializer'
+    'ConnectionReportSerializer', 'ConnectionApplicationSerializer',
+    'CustomTokenObtainPairSerializer', 'WeeklyLinePatrolSerializer',
+    'InletWorksDailyTaskSerializer', 'DailyFlowRecordSerializer', 'FlowReadingSerializer'
 ]

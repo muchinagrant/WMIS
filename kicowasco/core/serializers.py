@@ -3,8 +3,24 @@ from rest_framework import serializers
 from .models import (
     Repair, Attachment, Inspection, InspectionEntry, 
     TreatmentLog, TreatmentParameter, Incident, User,
-    Exhauster, License, SludgeCollection, ConnectionReport, ConnectionApplication
 )
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+
+class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
+    """
+    Customizes the JWT payload to include user roles and details,
+    allowing the React frontend to enforce Role-Based Access Control (RBAC).
+    """
+    @classmethod
+    def get_token(cls, user):
+        token = super().get_token(user)
+
+        # Add custom claims
+        token['username'] = user.username
+        token['role'] = user.role
+        token['full_name'] = user.get_full_name()
+        
+        return token
 
 
 # --- ATTACHMENT SERIALIZER ---
@@ -477,3 +493,81 @@ class ConnectionReportSerializer(serializers.ModelSerializer):
             ConnectionApplication.objects.create(report=report, **app_data)
             
         return report
+
+from .models import WeeklyLinePatrol, InletWorksDailyTask, DailyFlowRecord, FlowReading
+
+# --- F201: WEEKLY LINE PATROLS ---
+
+class WeeklyLinePatrolSerializer(serializers.ModelSerializer):
+    attendant_name = serializers.ReadOnlyField(source='attendant.get_full_name')
+
+    class Meta:
+        model = WeeklyLinePatrol
+        fields = '__all__'
+        read_only_fields = ['created_at']
+
+    def create(self, validated_data):
+        # Auto-assign the logged-in user if not explicitly provided
+        request = self.context.get('request', None)
+        if request and hasattr(request, "user") and 'attendant' not in validated_data:
+            validated_data['attendant'] = request.user
+        return super().create(validated_data)
+
+
+# --- F203A: INLET WORKS DAILY TASKS ---
+
+class InletWorksDailyTaskSerializer(serializers.ModelSerializer):
+    attendant_name = serializers.ReadOnlyField(source='attendant.get_full_name')
+
+    class Meta:
+        model = InletWorksDailyTask
+        fields = '__all__'
+
+
+# --- F203C: INLET WORKS FLOW MEASUREMENT ---
+
+class FlowReadingSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = FlowReading
+        fields = ['id', 'time_slot', 'meter_1', 'meter_2']
+
+class DailyFlowRecordSerializer(serializers.ModelSerializer):
+    readings = FlowReadingSerializer(many=True)
+    average_daily_flow = serializers.ReadOnlyField()
+
+    class Meta:
+        model = DailyFlowRecord
+        fields = ['id', 'date', 'remarks', 'readings', 'average_daily_flow']
+
+    def create(self, validated_data):
+        readings_data = validated_data.pop('readings', [])
+        
+        # Create the parent record
+        flow_record = DailyFlowRecord.objects.create(**validated_data)
+        
+        # Add the logged in user to the M2M attendants list
+        request = self.context.get('request', None)
+        if request and hasattr(request, "user"):
+            flow_record.attendants.add(request.user)
+
+        # Create nested readings
+        for reading_data in readings_data:
+            FlowReading.objects.create(daily_record=flow_record, **reading_data)
+            
+        return flow_record
+
+    def update(self, instance, validated_data):
+        readings_data = validated_data.pop('readings', None)
+        
+        # Update parent fields
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+
+        # Handle nested readings
+        if readings_data is not None:
+            instance.readings.all().delete()
+            for reading_data in readings_data:
+                FlowReading.objects.create(daily_record=instance, **reading_data)
+
+        return instance

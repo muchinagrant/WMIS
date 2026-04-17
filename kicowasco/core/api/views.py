@@ -3,82 +3,73 @@ from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.response import Response
-from rest_framework.decorators import action
+from rest_framework_simplejwt.views import TokenObtainPairView
+
 from core.models import (
     Incident, Repair, Inspection, TreatmentLog, Exhauster, 
-    License, SludgeCollection, ConnectionReport
+    License, SludgeCollection, ConnectionReport,
+    WeeklyLinePatrol, InletWorksDailyTask, DailyFlowRecord
 )
 from .serializers import (
     IncidentSerializer, RepairSerializer, InspectionSerializer,
     TreatmentLogSerializer, ExhausterSerializer, LicenseSerializer,
-    SludgeCollectionSerializer, ConnectionReportSerializer
+    SludgeCollectionSerializer, ConnectionReportSerializer,
+    CustomTokenObtainPairSerializer, WeeklyLinePatrolSerializer,
+    InletWorksDailyTaskSerializer, DailyFlowRecordSerializer
 )
 
+# --- CUSTOM AUTHENTICATION VIEW ---
+class CustomTokenObtainPairView(TokenObtainPairView):
+    """
+    Overrides the default token view to use our custom serializer,
+    which injects the user's role into the JWT payload for frontend RBAC.
+    """
+    serializer_class = CustomTokenObtainPairSerializer
+
+
+# --- EXISTING VIEWSETS ---
+
 class IncidentViewSet(viewsets.ModelViewSet):
-    """
-    API endpoint that allows Incidents to be viewed, created, or edited.
-    Automatically provides `list`, `create`, `retrieve`, `update` and `destroy` actions.
-    """
     queryset = Incident.objects.all().order_by('-reported_at')
     serializer_class = IncidentSerializer
-    
-    # This ensures only logged-in users can access these endpoints
     permission_classes = [IsAuthenticated]
 
     def perform_create(self, serializer):
-        """
-        Overrides the default save behavior to inject the current user
-        as the creator of the incident.
-        """
         serializer.save(created_by=self.request.user)
 
-
 class RepairViewSet(viewsets.ModelViewSet):
-    """
-    API endpoint that allows Repairs to be viewed, created, or edited.
-    """
     queryset = Repair.objects.all().order_by('-created_at')
     serializer_class = RepairSerializer
     permission_classes = [IsAuthenticated]
-    parser_classes = (MultiPartParser, FormParser)  # Necessary for image uploads
+    parser_classes = (MultiPartParser, FormParser)
 
     def perform_create(self, serializer):
-        """
-        Overrides the default save behavior to inject the current user
-        as the technician of the repair.
-        """
         serializer.save(technician=self.request.user)
-
 
 class InspectionViewSet(viewsets.ModelViewSet):
     queryset = Inspection.objects.all().order_by('-start_date')
     serializer_class = InspectionSerializer
     permission_classes = [IsAuthenticated]
 
-
 class TreatmentLogViewSet(viewsets.ModelViewSet):
     queryset = TreatmentLog.objects.all().order_by('-report_date')
     serializer_class = TreatmentLogSerializer
     permission_classes = [IsAuthenticated]
-
 
 class ExhausterViewSet(viewsets.ModelViewSet):
     queryset = Exhauster.objects.all().order_by('reg_no')
     serializer_class = ExhausterSerializer
     permission_classes = [IsAuthenticated]
 
-
 class LicenseViewSet(viewsets.ModelViewSet):
     queryset = License.objects.all().order_by('-end_date')
     serializer_class = LicenseSerializer
     permission_classes = [IsAuthenticated]
 
-
 class SludgeCollectionViewSet(viewsets.ModelViewSet):
     queryset = SludgeCollection.objects.all().order_by('-collection_date')
     serializer_class = SludgeCollectionSerializer
     permission_classes = [IsAuthenticated]
-
 
 class ConnectionReportViewSet(viewsets.ModelViewSet):
     queryset = ConnectionReport.objects.all().order_by('-start_date')
@@ -86,17 +77,39 @@ class ConnectionReportViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
 
 
+# --- NEW OPERATIONAL VIEWSETS ---
+
+class WeeklyLinePatrolViewSet(viewsets.ModelViewSet):
+    """
+    [cite_start]Endpoint for F201 Sewer Lines Weekly Tasks Record Sheet. [cite: 205]
+    """
+    queryset = WeeklyLinePatrol.objects.all().order_by('-date', '-time')
+    serializer_class = WeeklyLinePatrolSerializer
+    permission_classes = [IsAuthenticated]
+
+class InletWorksDailyTaskViewSet(viewsets.ModelViewSet):
+    """
+    [cite_start]Endpoint for F203A Inlet Works Screens & Grit Removal. [cite: 218]
+    """
+    queryset = InletWorksDailyTask.objects.all().order_by('-date')
+    serializer_class = InletWorksDailyTaskSerializer
+    permission_classes = [IsAuthenticated]
+
+class DailyFlowRecordViewSet(viewsets.ModelViewSet):
+    """
+    [cite_start]Endpoint for F203C Inlet Works Flow Measurement Task Record. [cite: 190]
+    """
+    queryset = DailyFlowRecord.objects.all().order_by('-date')
+    serializer_class = DailyFlowRecordSerializer
+    permission_classes = [IsAuthenticated]
+
+
+# --- SUMMARY VIEWSET ---
+
 class SummaryViewSet(APIView):
-    """
-    API endpoint for monthly summary reports.
-    Provides aggregated data for presentation purposes.
-    """
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        """
-        Get monthly summary data based on year and month query parameters.
-        """
         year = request.query_params.get('year')
         month = request.query_params.get('month')
 
@@ -106,7 +119,7 @@ class SummaryViewSet(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Mock data for presentation - in a real app, this would aggregate from actual models
+        # Mock data retained as per original implementation
         mock_data = {
             "collection": {
                 "inspection_incidences": 12,
@@ -121,8 +134,6 @@ class SummaryViewSet(APIView):
                 "total_effluent": 42000,
                 "avg_bod_removal": 85.5,
                 "avg_tss_removal": 92.3,
-                "avg_bod_removal_percent": 85.5,
-                "avg_tss_removal_percent": 92.3,
                 "days_with_alerts": 2,
             },
             "sludge": {
@@ -138,18 +149,12 @@ class SummaryViewSet(APIView):
             "period": {
                 "year": int(year),
                 "month": int(month),
-                "month_name": "March",  # Would be calculated based on month number
+                "month_name": "March",
             }
         }
-
         return Response(mock_data)
 
     def post(self, request):
-        """
-        Generate and return a PDF report (mock implementation).
-        """
-        # In a real implementation, this would generate an actual PDF
-        # For now, just return success
         return Response({
             "message": "Report generated successfully",
             "download_url": "/api/monthly-summary/download/mock-report.pdf"

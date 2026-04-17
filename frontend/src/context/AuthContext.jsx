@@ -20,7 +20,9 @@ export const AuthProvider = ({ children }) => {
 
         try {
             const parsedTokens = JSON.parse(storedTokens);
-            return parsedTokens.access ? jwtDecode(parsedTokens.access) : null;
+            const decoded = jwtDecode(parsedTokens.access);
+            // Ensure decoded token looks like: { user_id: 1, username: "john", role: "supervisor" }
+            return decoded; 
         } catch (error) {
             return null;
         }
