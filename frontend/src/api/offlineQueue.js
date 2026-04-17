@@ -13,14 +13,28 @@ const idMappingStore = localforage.createInstance({
 });
 
 export const addToQueue = async (endpoint, payload, tempId = Date.now().toString(), parentTempId = null) => {
+  let method = 'POST';
+  let metadata = {};
+  let queueId = tempId;
+  let queueParentTempId = parentTempId;
+
+  if (typeof tempId === 'string' && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(tempId.toUpperCase()) && (parentTempId === null || typeof parentTempId === 'object')) {
+    method = tempId.toUpperCase();
+    queueId = Date.now().toString();
+    metadata = parentTempId && typeof parentTempId === 'object' ? parentTempId : {};
+    queueParentTempId = null;
+  }
+
   const item = { 
-      id: tempId, 
+      id: queueId, 
       endpoint, 
       payload, 
-      parentTempId, // Keep track if this relies on a parent created offline
+      method,
+      metadata,
+      parentTempId: queueParentTempId,
       timestamp: new Date().toISOString() 
   };
-  await syncQueue.setItem(tempId, item);
+  await syncQueue.setItem(queueId, item);
   return item;
 };
 
@@ -59,7 +73,11 @@ export const processQueue = async () => {
                 }
             }
 
-            const response = await api.post(item.endpoint, finalPayload);
+            const response = await api.request({
+              method: (item.method || 'POST').toLowerCase(),
+              url: item.endpoint,
+              data: finalPayload
+            });
             
             // If the backend returns the new Real ID, save it in our mapping store
             if (response.data && response.data.id) {

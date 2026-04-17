@@ -5,7 +5,6 @@ import api from '../api/axios';
 import { SyncContext } from '../context/SyncContext';
 import { addToQueue } from '../api/offlineQueue';
 
-// Validation Schema for F201 Template
 const PatrolSchema = Yup.object().shape({
     date: Yup.date().required('Date is required'),
     time: Yup.string().required('Time is required'),
@@ -21,11 +20,8 @@ const PatrolSchema = Yup.object().shape({
 
 const InspectionTable = () => {
     const [submitStatus, setSubmitStatus] = useState({ type: '', message: '' });
-
-    // Extract offline states from context
     const { isOnline, refreshQueueCount } = useContext(SyncContext);
 
-    // Initial values for the patrol record
     const initialValues = {
         date: new Date().toISOString().split('T')[0],
         time: new Date().toTimeString().slice(0, 5),
@@ -42,12 +38,17 @@ const InspectionTable = () => {
     const handleSubmit = async (values, { setSubmitting, resetForm }) => {
         setSubmitStatus({ type: '', message: '' });
 
+        const cleanedValues = {
+            ...values,
+            new_mother_accounts: values.new_mother_accounts === '' ? 0 : parseInt(values.new_mother_accounts, 10),
+            new_child_accounts: values.new_child_accounts === '' ? 0 : parseInt(values.new_child_accounts, 10)
+        };
+
         try {
             if (isOnline) {
-                // Post to our new Weekly Line Patrol API endpoint
-                const response = await api.post('/api/weekly-patrols/', values);
+                const response = await api.post('/api/weekly-patrols/', cleanedValues);
 
-                if (response.status === 201) {
+                if (response.status === 201 || response.status === 200) {
                     setSubmitStatus({ type: 'success', message: 'Patrol record submitted successfully!' });
                     resetForm();
                 }
@@ -55,17 +56,13 @@ const InspectionTable = () => {
                 throw new Error('Network offline');
             }
         } catch (error) {
-            if (!navigator.onLine ||
-                error.message === 'Network Error' ||
-                error.message === 'Network offline' ||
-                error.code === 'ERR_NETWORK') {
-
-                // Save to IndexedDB queue for offline sync
-                await addToQueue('/api/weekly-patrols/', values, 'POST', {
+            if (!navigator.onLine || error.message === 'Network Error' || error.message === 'Network offline' || error.code === 'ERR_NETWORK') {
+                await addToQueue('/api/weekly-patrols/', cleanedValues, 'POST', {
                     isPatrol: true,
-                    area: values.drainage_area,
+                    area: cleanedValues.drainage_area,
                     timestamp: new Date().toISOString()
                 });
+
                 await refreshQueueCount();
 
                 setSubmitStatus({
@@ -104,13 +101,13 @@ const InspectionTable = () => {
             {submitStatus.message && (
                 <div style={{
                     padding: '15px', marginBottom: '20px', borderRadius: '6px',
-                    backgroundColor: submitStatus.type === 'success' ? '#d1fae5' : 
+                    backgroundColor: submitStatus.type === 'success' ? '#d1fae5' :
                                    submitStatus.type === 'error' ? '#fee2e2' : '#fff3cd',
-                    color: submitStatus.type === 'success' ? '#065f46' : 
+                    color: submitStatus.type === 'success' ? '#065f46' :
                            submitStatus.type === 'error' ? '#991b1b' : '#856404'
                 }}>
                     <i className={`fas ${
-                        submitStatus.type === 'success' ? 'fa-check-circle' : 
+                        submitStatus.type === 'success' ? 'fa-check-circle' :
                         submitStatus.type === 'error' ? 'fa-exclamation-circle' : 'fa-info-circle'
                     }`} style={{ marginRight: '8px' }}></i>
                     {submitStatus.message}

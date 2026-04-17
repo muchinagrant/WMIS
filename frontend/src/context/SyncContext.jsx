@@ -24,8 +24,12 @@ export const SyncProvider = ({ children }) => {
 
     for (const item of queue) {
       try {
-        // Attempt to post the saved payload to the saved endpoint
-        await api.post(item.endpoint, item.payload);
+        // Attempt to replay the saved request to the saved endpoint
+        await api.request({
+          method: (item.method || 'POST').toLowerCase(),
+          url: item.endpoint,
+          data: item.payload
+        });
         // If successful, remove it from the local queue
         await removeFromQueue(item.id);
       } catch (err) {

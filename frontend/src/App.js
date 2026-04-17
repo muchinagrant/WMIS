@@ -1,4 +1,4 @@
-import React, { useEffect, useContext } from 'react';
+import React, { useContext, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import AuthContext, { AuthProvider } from './context/AuthContext';
 import { wakeUpServer } from './api/axios';
@@ -16,7 +16,6 @@ import SludgeManifest from './components/SludgeManifest';
 import SewerConnections from './components/SewerConnections';
 import MonthlySummary from './components/MonthlySummary';
 
-// A helper component to protect individual routes based on role
 const RoleRoute = ({ element, allowedRoles }) => {
   const { user } = useContext(AuthContext);
   const role = user?.role || 'attendant';
@@ -53,7 +52,8 @@ const AppRoutes = () => {
       </Routes>
     </div>
   );
-};
+}
+
 function App() {
   return (
     <Router>

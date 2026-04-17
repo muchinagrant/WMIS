@@ -6,7 +6,6 @@ import { SyncContext } from '../context/SyncContext';
 import { addToQueue } from '../api/offlineQueue';
 import AuthContext from '../context/AuthContext';
 
-// Validation Schema for Combined F203A and F203C
 const DailyPlantSchema = Yup.object().shape({
     date: Yup.date().required('Date is required'),
     readings: Yup.array().of(
@@ -26,14 +25,12 @@ const TreatmentLogForm = () => {
 
     const initialValues = {
         date: new Date().toISOString().split('T')[0],
-        // F203C Flow Readings (Mandatory Time Slots)
         readings: [
             { time_slot: '09:00', label: '9:00 AM', meter_1: '', meter_2: '' },
             { time_slot: '12:00', label: '12:00 PM', meter_1: '', meter_2: '' },
             { time_slot: '15:00', label: '3:00 PM', meter_1: '', meter_2: '' },
             { time_slot: '18:00', label: '6:00 PM', meter_1: '', meter_2: '' }
         ],
-        // F203A Grit & Screenings Checklist
         raking_t1: false,
         raking_t2: false,
         raking_t3: false,
@@ -46,12 +43,10 @@ const TreatmentLogForm = () => {
 
     const handleSubmit = async (values, { setSubmitting, resetForm }) => {
         setSubmitStatus({ type: '', message: '' });
-        
-        // 1. Split the unified form data into two distinct backend payloads
+
         const flowPayload = {
             date: values.date,
             remarks: values.remarks,
-            // Only send readings where at least one meter has data
             readings: values.readings
                 .filter(r => r.meter_1 !== '' || r.meter_2 !== '')
                 .map(r => ({
@@ -74,12 +69,11 @@ const TreatmentLogForm = () => {
 
         try {
             if (isOnline) {
-                // Fire both API requests concurrently for speed
                 const [flowRes, taskRes] = await Promise.all([
                     api.post('/api/daily-flow-records/', flowPayload),
                     api.post('/api/inlet-daily-tasks/', taskPayload)
                 ]);
-                
+
                 if (flowRes.status === 201 && taskRes.status === 201) {
                     setSubmitStatus({ type: 'success', message: 'Inlet Works Logs (Flow & Screens) submitted successfully!' });
                     resetForm();
@@ -89,22 +83,20 @@ const TreatmentLogForm = () => {
             }
         } catch (error) {
             if (!navigator.onLine || error.message === 'Network Error' || error.message === 'Network offline' || error.code === 'ERR_NETWORK') {
-                
-                // Add both payloads to the IndexedDB offline queue
                 await addToQueue('/api/daily-flow-records/', flowPayload, 'POST', { isFlowRecord: true, date: values.date });
                 await addToQueue('/api/inlet-daily-tasks/', taskPayload, 'POST', { isInletTask: true, date: values.date });
-                
+
                 await refreshQueueCount();
-                
-                setSubmitStatus({ 
-                    type: 'info', 
-                    message: 'Saved offline. Both Flow and Screen logs will sync automatically when connection is restored.' 
+
+                setSubmitStatus({
+                    type: 'info',
+                    message: 'Saved offline. Both Flow and Screen logs will sync automatically when connection is restored.'
                 });
                 resetForm();
             } else {
-                setSubmitStatus({ 
-                    type: 'error', 
-                    message: 'Failed to submit logs. Check for existing entries on this date.' 
+                setSubmitStatus({
+                    type: 'error',
+                    message: 'Failed to submit logs. Check for existing entries on this date.'
                 });
             }
         } finally {
@@ -132,13 +124,13 @@ const TreatmentLogForm = () => {
             {submitStatus.message && (
                 <div style={{
                     padding: '15px', marginBottom: '20px', borderRadius: '6px',
-                    backgroundColor: submitStatus.type === 'success' ? '#d1fae5' : 
+                    backgroundColor: submitStatus.type === 'success' ? '#d1fae5' :
                                    submitStatus.type === 'error' ? '#fee2e2' : '#fff3cd',
-                    color: submitStatus.type === 'success' ? '#065f46' : 
+                    color: submitStatus.type === 'success' ? '#065f46' :
                            submitStatus.type === 'error' ? '#991b1b' : '#856404'
                 }}>
                     <i className={`fas ${
-                        submitStatus.type === 'success' ? 'fa-check-circle' : 
+                        submitStatus.type === 'success' ? 'fa-check-circle' :
                         submitStatus.type === 'error' ? 'fa-exclamation-circle' : 'fa-info-circle'
                     }`} style={{ marginRight: '8px' }}></i>
                     {submitStatus.message}
@@ -150,7 +142,7 @@ const TreatmentLogForm = () => {
                 validationSchema={DailyPlantSchema}
                 onSubmit={handleSubmit}
             >
-                {({ isSubmitting, values, setFieldValue }) => (
+                {({ isSubmitting, values }) => (
                     <Form>
                         <div className="form-group" style={{ maxWidth: '300px', marginBottom: '30px' }}>
                             <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600' }}>Reporting Date <span style={{ color: '#e11d48' }}>*</span></label>
@@ -158,12 +150,11 @@ const TreatmentLogForm = () => {
                             <ErrorMessage name="date" component="div" style={{ color: '#e11d48', fontSize: '0.85rem', marginTop: '5px' }} />
                         </div>
 
-                        {/* SECTION 1: F203C FLOW MEASUREMENT */}
                         <div style={{ background: '#f9fbfd', padding: '20px', borderRadius: '8px', border: '1px solid #eef5fb', marginBottom: '30px' }}>
                             <h3 style={{ margin: '0 0 15px', color: '#1a6fb0', fontSize: '1.1rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
                                 <i className="fas fa-water"></i> F203C: Flow Measurement
                             </h3>
-                            
+
                             <div className="scrollable-table">
                                 <table style={{ width: '100%', borderCollapse: 'collapse', background: 'white' }}>
                                     <thead>
@@ -180,21 +171,21 @@ const TreatmentLogForm = () => {
                                                     <tr key={index} style={{ borderBottom: '1px solid #eef5fb' }}>
                                                         <td style={{ padding: '12px', fontWeight: '600', color: '#2c3e50' }}>{reading.label}</td>
                                                         <td style={{ padding: '8px', textAlign: 'center' }}>
-                                                            <Field 
-                                                                type="number" 
-                                                                step="0.01" 
-                                                                name={`readings.${index}.meter_1`} 
+                                                            <Field
+                                                                type="number"
+                                                                step="0.01"
+                                                                name={`readings.${index}.meter_1`}
                                                                 placeholder="0.00"
-                                                                style={{ width: '120px', padding: '8px', border: '1px solid #d1e5f1', borderRadius: '4px', textAlign: 'center' }} 
+                                                                style={{ width: '120px', padding: '8px', border: '1px solid #d1e5f1', borderRadius: '4px', textAlign: 'center' }}
                                                             />
                                                         </td>
                                                         <td style={{ padding: '8px', textAlign: 'center' }}>
-                                                            <Field 
-                                                                type="number" 
-                                                                step="0.01" 
-                                                                name={`readings.${index}.meter_2`} 
+                                                            <Field
+                                                                type="number"
+                                                                step="0.01"
+                                                                name={`readings.${index}.meter_2`}
                                                                 placeholder="0.00"
-                                                                style={{ width: '120px', padding: '8px', border: '1px solid #d1e5f1', borderRadius: '4px', textAlign: 'center' }} 
+                                                                style={{ width: '120px', padding: '8px', border: '1px solid #d1e5f1', borderRadius: '4px', textAlign: 'center' }}
                                                             />
                                                         </td>
                                                     </tr>
@@ -204,14 +195,13 @@ const TreatmentLogForm = () => {
                                     </FieldArray>
                                 </table>
                             </div>
-                            
+
                             <div className="form-group" style={{ marginTop: '15px', marginBottom: 0 }}>
                                 <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', fontSize: '0.9rem' }}>Flow Remarks</label>
                                 <Field type="text" name="remarks" placeholder="Any flow meter issues?" style={{ width: '100%', padding: '10px', border: '1px solid #d1e5f1', borderRadius: '6px' }} />
                             </div>
                         </div>
 
-                        {/* SECTION 2: F203A GRIT REMOVAL */}
                         <div style={{ background: '#f9fbfd', padding: '20px', borderRadius: '8px', border: '1px solid #eef5fb', marginBottom: '30px' }}>
                             <h3 style={{ margin: '0 0 15px', color: '#1a6fb0', fontSize: '1.1rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
                                 <i className="fas fa-trash-alt"></i> F203A: Screens & Grit Removal
@@ -230,7 +220,7 @@ const TreatmentLogForm = () => {
                                         <Field type="checkbox" name="raking_t3" style={{ width: '18px', height: '18px' }} /> T3 Complete
                                     </label>
                                 </div>
-                                
+
                                 <div>
                                     <h4 style={{ fontSize: '0.9rem', color: '#7f8c8d', marginBottom: '10px' }}>Waste Management</h4>
                                     <label style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px', cursor: 'pointer' }}>
