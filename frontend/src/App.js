@@ -16,20 +16,19 @@ import SludgeManifest from './components/SludgeManifest';
 import SewerConnections from './components/SewerConnections';
 import MonthlySummary from './components/MonthlySummary';
 
-// A helper component to protect individual routes based on Role
+// A helper component to protect individual routes based on role
 const RoleRoute = ({ element, allowedRoles }) => {
   const { user } = useContext(AuthContext);
   const role = user?.role || 'attendant';
-  
+
   if (!allowedRoles.includes(role)) {
-      return <Navigate to="/incidence" replace />;
+    return <Navigate to="/incidence" replace />;
   }
+
   return element;
 };
 
-// Extracted routes logic to access AuthContext
 const AppRoutes = () => {
-  // Wake up the Render backend as soon as the app loads
   useEffect(() => {
     wakeUpServer();
   }, []);
@@ -42,30 +41,12 @@ const AppRoutes = () => {
         <Route element={<ProtectedLayout />}>
           <Route path="/" element={<Navigate to="/incidence" replace />} />
           <Route path="/incidence" element={<IncidenceForm />} />
-          
-          <Route path="/repairs" element={
-            <RoleRoute allowedRoles={['admin', 'superintendent', 'supervisor', 'operator', 'attendant']} element={<RepairForm />} />
-          } />
-          
-          <Route path="/inspection" element={
-            <RoleRoute allowedRoles={['admin', 'superintendent', 'supervisor', 'attendant']} element={<InspectionTable />} />
-          } />
-          
-          <Route path="/treatment" element={
-            <RoleRoute allowedRoles={['admin', 'superintendent', 'supervisor', 'lab_tech', 'operator']} element={<TreatmentLogForm />} />
-          } />
-          
-          <Route path="/sludge" element={
-            <RoleRoute allowedRoles={['admin', 'superintendent', 'supervisor', 'operator']} element={<SludgeManifest />} />
-          } />
-          
-          <Route path="/connections" element={
-            <RoleRoute allowedRoles={['admin', 'superintendent', 'supervisor']} element={<SewerConnections />} />
-          } />
-          
-          <Route path="/summary" element={
-            <RoleRoute allowedRoles={['admin', 'superintendent']} element={<MonthlySummary />} />
-          } />
+          <Route path="/repairs" element={<RoleRoute allowedRoles={['admin', 'superintendent', 'supervisor', 'operator', 'attendant']} element={<RepairForm />} />} />
+          <Route path="/inspection" element={<RoleRoute allowedRoles={['admin', 'superintendent', 'supervisor', 'attendant']} element={<InspectionTable />} />} />
+          <Route path="/treatment" element={<RoleRoute allowedRoles={['admin', 'superintendent', 'supervisor', 'lab_tech', 'operator']} element={<TreatmentLogForm />} />} />
+          <Route path="/sludge" element={<RoleRoute allowedRoles={['admin', 'superintendent', 'supervisor', 'operator']} element={<SludgeManifest />} />} />
+          <Route path="/connections" element={<RoleRoute allowedRoles={['admin', 'superintendent', 'supervisor']} element={<SewerConnections />} />} />
+          <Route path="/summary" element={<RoleRoute allowedRoles={['admin', 'superintendent']} element={<MonthlySummary />} />} />
         </Route>
 
         <Route path="*" element={<Navigate to="/incidence" replace />} />
@@ -73,12 +54,11 @@ const AppRoutes = () => {
     </div>
   );
 };
-
 function App() {
   return (
     <Router>
       <AuthProvider>
-         <AppRoutes />
+        <AppRoutes />
       </AuthProvider>
     </Router>
   );

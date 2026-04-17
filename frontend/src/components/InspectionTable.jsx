@@ -5,7 +5,7 @@ import api from '../api/axios';
 import { SyncContext } from '../context/SyncContext';
 import { addToQueue } from '../api/offlineQueue';
 
-// 1. Validation Schema for F201 Template
+// Validation Schema for F201 Template
 const PatrolSchema = Yup.object().shape({
     date: Yup.date().required('Date is required'),
     time: Yup.string().required('Time is required'),
@@ -21,14 +21,14 @@ const PatrolSchema = Yup.object().shape({
 
 const InspectionTable = () => {
     const [submitStatus, setSubmitStatus] = useState({ type: '', message: '' });
-    
+
     // Extract offline states from context
     const { isOnline, refreshQueueCount } = useContext(SyncContext);
 
     // Initial values for the patrol record
     const initialValues = {
         date: new Date().toISOString().split('T')[0],
-        time: new Date().toTimeString().slice(0, 5), // 'HH:MM'
+        time: new Date().toTimeString().slice(0, 5),
         drainage_area: '',
         sewer_line_ref: '',
         abnormality_observed: 'none',
@@ -41,12 +41,12 @@ const InspectionTable = () => {
 
     const handleSubmit = async (values, { setSubmitting, resetForm }) => {
         setSubmitStatus({ type: '', message: '' });
-        
+
         try {
             if (isOnline) {
                 // Post to our new Weekly Line Patrol API endpoint
                 const response = await api.post('/api/weekly-patrols/', values);
-                
+
                 if (response.status === 201) {
                     setSubmitStatus({ type: 'success', message: 'Patrol record submitted successfully!' });
                     resetForm();
@@ -55,11 +55,11 @@ const InspectionTable = () => {
                 throw new Error('Network offline');
             }
         } catch (error) {
-            if (!navigator.onLine || 
-                error.message === 'Network Error' || 
+            if (!navigator.onLine ||
+                error.message === 'Network Error' ||
                 error.message === 'Network offline' ||
                 error.code === 'ERR_NETWORK') {
-                
+
                 // Save to IndexedDB queue for offline sync
                 await addToQueue('/api/weekly-patrols/', values, 'POST', {
                     isPatrol: true,
@@ -67,16 +67,16 @@ const InspectionTable = () => {
                     timestamp: new Date().toISOString()
                 });
                 await refreshQueueCount();
-                
-                setSubmitStatus({ 
-                    type: 'info', 
-                    message: 'Saved offline. Record will sync automatically when connection is restored.' 
+
+                setSubmitStatus({
+                    type: 'info',
+                    message: 'Saved offline. Record will sync automatically when connection is restored.'
                 });
                 resetForm();
             } else {
-                setSubmitStatus({ 
-                    type: 'error', 
-                    message: error.response?.data?.detail || 'Failed to submit patrol record. Please try again.' 
+                setSubmitStatus({
+                    type: 'error',
+                    message: error.response?.data?.detail || 'Failed to submit patrol record. Please try again.'
                 });
             }
         } finally {
