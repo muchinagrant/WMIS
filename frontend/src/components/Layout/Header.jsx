@@ -18,10 +18,12 @@ const Header = () => {
                 {user && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: '15px', background: 'rgba(0,0,0,0.15)', padding: '8px 15px', borderRadius: '8px' }}>
                         <div style={{ textAlign: 'right', fontSize: '0.9rem' }}>
-                            {/* Assuming the token decodes to include 'username', adjust if your model uses 'email' */}
                             <span style={{ display: 'block', fontWeight: 'bold' }}>
                                 <i className="fas fa-user-circle" style={{ marginRight: '5px' }}></i> 
-                                {user.username || 'System User'}
+                                {user.full_name || user.username || 'System User'}
+                            </span>
+                            <span style={{ display: 'block', fontSize: '0.75rem', opacity: 0.8, textTransform: 'capitalize' }}>
+                                {user.role ? user.role.replace(/_/g, ' ') : 'Attendant'}
                             </span>
                         </div>
                         
