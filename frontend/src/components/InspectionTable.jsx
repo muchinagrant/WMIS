@@ -1,111 +1,82 @@
-import React, { useState, useContext } from 'react'; // 1. Added useContext
-import { Formik, Form, Field, FieldArray, ErrorMessage } from 'formik';
+import React, { useState, useContext } from 'react';
+import { Formik, Form, Field, ErrorMessage } from 'formik';
 import * as Yup from 'yup';
 import api from '../api/axios';
-import { SyncContext } from '../context/SyncContext'; // 2. Import SyncContext
-import { addToQueue } from '../api/offlineQueue';     // 3. Import queue utility
+import { SyncContext } from '../context/SyncContext';
+import { addToQueue } from '../api/offlineQueue';
 
-// 1. Updated Validation Schema with notes field and optional length_m
-const InspectionSchema = Yup.object().shape({
-    start_date: Yup.date().required('Start date is required'),
-    end_date: Yup.date().min(
-        Yup.ref('start_date'),
-        'End date cannot be before start date'
-    ),
-    notes: Yup.string(),
-    entries: Yup.array().of(
-        Yup.object().shape({
-            date: Yup.date().required('Date is required'),
-            section_identifier: Yup.string().required('Section ID is required'),
-            length_m: Yup.number().min(0, 'Must be positive'), // Made optional by removing .required()
-            condition: Yup.string().oneOf(['good', 'minor', 'major']).required('Condition is required'),
-            remarks: Yup.string(),
-            action: Yup.string() // Added action field
-        })
-    ).min(1, 'Add at least one inspection entry')
+// 1. Validation Schema for F201 Template
+const PatrolSchema = Yup.object().shape({
+    date: Yup.date().required('Date is required'),
+    time: Yup.string().required('Time is required'),
+    drainage_area: Yup.string().required('Drainage area/estate is required'),
+    sewer_line_ref: Yup.string().required('Sewer line reference is required'),
+    abnormality_observed: Yup.string().required('Select an abnormality status'),
+    abnormality_details: Yup.string(),
+    new_mother_accounts: Yup.number().min(0, 'Cannot be negative').integer(),
+    new_child_accounts: Yup.number().min(0, 'Cannot be negative').integer(),
+    corrective_action_taken: Yup.string(),
+    further_action_required: Yup.string()
 });
 
 const InspectionTable = () => {
-    const [statusMsg, setStatusMsg] = useState({ type: '', text: '' });
-    const today = new Date().toISOString().split('T')[0];
+    const [submitStatus, setSubmitStatus] = useState({ type: '', message: '' });
     
-    // 4. Extract offline states from context
+    // Extract offline states from context
     const { isOnline, refreshQueueCount } = useContext(SyncContext);
 
-    // 2. Updated Initial Values with notes field and action field
+    // Initial values for the patrol record
     const initialValues = {
-        start_date: today,
-        end_date: '',
-        notes: '',
-        entries: [
-            { date: today, section_identifier: '', length_m: '', condition: '', remarks: '', action: '' }
-        ]
+        date: new Date().toISOString().split('T')[0],
+        time: new Date().toTimeString().slice(0, 5), // 'HH:MM'
+        drainage_area: '',
+        sewer_line_ref: '',
+        abnormality_observed: 'none',
+        abnormality_details: '',
+        new_mother_accounts: 0,
+        new_child_accounts: 0,
+        corrective_action_taken: '',
+        further_action_required: ''
     };
 
-    // 5. Updated offline-capable submit handler
     const handleSubmit = async (values, { setSubmitting, resetForm }) => {
-        setStatusMsg({ type: '', text: '' });
+        setSubmitStatus({ type: '', message: '' });
         
         try {
-            // 1. Clean data to prevent 400 errors (Convert empty strings to null for numbers)
-            const cleanedValues = {
-                ...values,
-                entries: values.entries.map(entry => ({
-                    ...entry,
-                    length_m: entry.length_m === '' ? null : parseFloat(entry.length_m)
-                }))
-            };
-
             if (isOnline) {
-                // 2. FIX THE 404: Added the /api/ prefix and use cleanedValues
-                const response = await api.post('/api/inspections/', cleanedValues);
+                // Post to our new Weekly Line Patrol API endpoint
+                const response = await api.post('/api/weekly-patrols/', values);
                 
-                if (response.status === 201 || response.status === 200) {
-                    setStatusMsg({ type: 'success', text: 'Inspection log submitted successfully!' });
+                if (response.status === 201) {
+                    setSubmitStatus({ type: 'success', message: 'Patrol record submitted successfully!' });
                     resetForm();
                 }
             } else {
-                // Force the catch block if offline
                 throw new Error('Network offline');
             }
         } catch (error) {
-            // Check if we're offline or if it's a network error
             if (!navigator.onLine || 
                 error.message === 'Network Error' || 
                 error.message === 'Network offline' ||
                 error.code === 'ERR_NETWORK') {
                 
-                // 1. Re-calculate cleanedValues for offline if needed (or use from try block scope)
-                const cleanedValues = {
-                    ...values,
-                    entries: values.entries.map(entry => ({
-                        ...entry,
-                        length_m: entry.length_m === '' ? null : parseFloat(entry.length_m)
-                    }))
-                };
-
-                // 3. Update the offline queue URL too!
-                await addToQueue('/api/inspections/', cleanedValues, 'POST', {
-                    isInspection: true,
-                    entryCount: cleanedValues.entries.length,
-                    hasNotes: !!cleanedValues.notes
+                // Save to IndexedDB queue for offline sync
+                await addToQueue('/api/weekly-patrols/', values, 'POST', {
+                    isPatrol: true,
+                    area: values.drainage_area,
+                    timestamp: new Date().toISOString()
                 });
+                await refreshQueueCount();
                 
-                await refreshQueueCount(); // Update the UI counter
-                
-                setStatusMsg({ 
+                setSubmitStatus({ 
                     type: 'info', 
-                    text: 'Inspection saved offline. It will sync automatically when connection is restored. ' +
-                          `(${cleanedValues.entries.length} inspection entries queued)`
+                    message: 'Saved offline. Record will sync automatically when connection is restored.' 
                 });
-                
-                // Reset form after offline save
                 resetForm();
             } else {
-                // Actual API error (validation, server error, etc.)
-                setStatusMsg({ 
+                setSubmitStatus({ 
                     type: 'error', 
-                    text: 'Submission failed: ' + (error.response?.data?.detail || error.message)
+                    message: error.response?.data?.detail || 'Failed to submit patrol record. Please try again.' 
                 });
             }
         } finally {
@@ -116,211 +87,120 @@ const InspectionTable = () => {
     return (
         <div className="form-section active">
             <h2 style={{ color: '#1a6fb0', marginBottom: '25px', paddingBottom: '15px', borderBottom: '2px solid #e0f0fa', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <i className="fas fa-search"></i> Sewer Line Inspection Log
+                <i className="fas fa-search"></i> Sewer Lines Weekly Patrol (F201)
             </h2>
 
-            {/* Offline indicator */}
             {!isOnline && (
                 <div style={{
-                    padding: '15px', 
-                    marginBottom: '20px', 
-                    borderRadius: '6px',
-                    backgroundColor: '#fff3cd',
-                    color: '#856404',
-                    border: '1px solid #ffeeba',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '10px'
+                    padding: '15px', marginBottom: '20px', borderRadius: '6px',
+                    backgroundColor: '#fff3cd', color: '#856404', border: '1px solid #ffeeba',
+                    display: 'flex', alignItems: 'center', gap: '10px'
                 }}>
-                    <i className="fas fa-wifi-slash" style={{ fontSize: '1.2rem' }}></i>
-                    <div>
-                        <strong>You are currently offline.</strong> Inspection data will be saved locally and synced when connection is restored.
-                    </div>
+                    <i className="fas fa-wifi-slash"></i>
+                    You are currently offline. Patrol records will be saved locally and synced automatically.
                 </div>
             )}
 
-            {statusMsg.text && (
+            {submitStatus.message && (
                 <div style={{
-                    padding: '15px', 
-                    marginBottom: '20px', 
-                    borderRadius: '6px',
-                    backgroundColor: statusMsg.type === 'success' ? '#d1fae5' : 
-                                   statusMsg.type === 'error' ? '#fee2e2' : '#fff3cd',
-                    color: statusMsg.type === 'success' ? '#065f46' : 
-                           statusMsg.type === 'error' ? '#991b1b' : '#856404',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '10px'
+                    padding: '15px', marginBottom: '20px', borderRadius: '6px',
+                    backgroundColor: submitStatus.type === 'success' ? '#d1fae5' : 
+                                   submitStatus.type === 'error' ? '#fee2e2' : '#fff3cd',
+                    color: submitStatus.type === 'success' ? '#065f46' : 
+                           submitStatus.type === 'error' ? '#991b1b' : '#856404'
                 }}>
                     <i className={`fas ${
-                        statusMsg.type === 'success' ? 'fa-check-circle' : 
-                        statusMsg.type === 'error' ? 'fa-exclamation-circle' : 'fa-info-circle'
-                    }`} style={{ fontSize: '1.2rem' }}></i>
-                    <div>{statusMsg.text}</div>
+                        submitStatus.type === 'success' ? 'fa-check-circle' : 
+                        submitStatus.type === 'error' ? 'fa-exclamation-circle' : 'fa-info-circle'
+                    }`} style={{ marginRight: '8px' }}></i>
+                    {submitStatus.message}
                 </div>
             )}
 
             <Formik
                 initialValues={initialValues}
-                validationSchema={InspectionSchema}
+                validationSchema={PatrolSchema}
                 onSubmit={handleSubmit}
             >
-                {({ values, isSubmitting }) => (
+                {({ isSubmitting, values }) => (
                     <Form>
-                        <div className="grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '25px' }}>
+                        <div className="grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '20px' }}>
                             <div className="form-group">
-                                <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600' }}>Inspection Start Date</label>
-                                <Field 
-                                    type="date" 
-                                    name="start_date" 
-                                    style={{ width: '100%', padding: '12px', border: '1px solid #d1e5f1', borderRadius: '6px' }}
-                                    disabled={isSubmitting}
-                                />
-                                <ErrorMessage name="start_date" component="div" style={{ color: '#e11d48', fontSize: '0.85rem', marginTop: '4px' }} />
+                                <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600' }}>Date <span style={{ color: '#e11d48' }}>*</span></label>
+                                <Field type="date" name="date" style={{ width: '100%', padding: '12px', border: '1px solid #d1e5f1', borderRadius: '6px' }} />
+                                <ErrorMessage name="date" component="div" style={{ color: '#e11d48', fontSize: '0.85rem', marginTop: '5px' }} />
                             </div>
                             <div className="form-group">
-                                <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600' }}>Inspection End Date</label>
-                                <Field 
-                                    type="date" 
-                                    name="end_date" 
-                                    style={{ width: '100%', padding: '12px', border: '1px solid #d1e5f1', borderRadius: '6px' }}
-                                    disabled={isSubmitting}
-                                />
-                                <ErrorMessage name="end_date" component="div" style={{ color: '#e11d48', fontSize: '0.85rem', marginTop: '4px' }} />
+                                <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600' }}>Time <span style={{ color: '#e11d48' }}>*</span></label>
+                                <Field type="time" name="time" style={{ width: '100%', padding: '12px', border: '1px solid #d1e5f1', borderRadius: '6px' }} />
+                                <ErrorMessage name="time" component="div" style={{ color: '#e11d48', fontSize: '0.85rem', marginTop: '5px' }} />
                             </div>
                         </div>
 
-                        {/* 3. FieldArray handles the dynamic rows */}
-                        <div className="scrollable-table" style={{ overflowX: 'auto', margin: '25px 0', border: '1px solid #eef5fb', borderRadius: '8px' }}>
-                            <table style={{ width: '100%', borderCollapse: 'collapse', background: 'white' }}>
-                                <thead>
-                                    <tr>
-                                        <th style={{ background: '#1a6fb0', color: 'white', textAlign: 'left', padding: '12px', fontWeight: '600' }}>Date</th>
-                                        <th style={{ background: '#1a6fb0', color: 'white', textAlign: 'left', padding: '12px', fontWeight: '600' }}>Location/Section ID</th>
-                                        <th style={{ background: '#1a6fb0', color: 'white', textAlign: 'left', padding: '12px', fontWeight: '600' }}>Length (m)</th>
-                                        <th style={{ background: '#1a6fb0', color: 'white', textAlign: 'left', padding: '12px', fontWeight: '600' }}>Condition</th>
-                                        <th style={{ background: '#1a6fb0', color: 'white', textAlign: 'left', padding: '12px', fontWeight: '600' }}>Remarks</th>
-                                        <th style={{ background: '#1a6fb0', color: 'white', textAlign: 'center', padding: '12px', fontWeight: '600' }}>Action</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <FieldArray name="entries">
-                                        {({ push, remove }) => (
-                                            <>
-                                                {values.entries.length > 0 && values.entries.map((entry, index) => (
-                                                    <tr key={index} style={{ borderBottom: '1px solid #eef5fb', background: index % 2 === 0 ? 'white' : '#f9fbfd' }}>
-                                                        <td style={{ padding: '10px' }}>
-                                                            <Field 
-                                                                type="date" 
-                                                                name={`entries.${index}.date`} 
-                                                                style={{ padding: '8px', border: '1px solid #d1e5f1', borderRadius: '4px', width: '100%' }}
-                                                                disabled={isSubmitting}
-                                                            />
-                                                            <ErrorMessage name={`entries.${index}.date`} component="div" style={{ color: '#e11d48', fontSize: '0.75rem' }} />
-                                                        </td>
-                                                        <td style={{ padding: '10px' }}>
-                                                            <Field 
-                                                                type="text" 
-                                                                name={`entries.${index}.section_identifier`} 
-                                                                placeholder="Identifier" 
-                                                                style={{ padding: '8px', border: '1px solid #d1e5f1', borderRadius: '4px', width: '100%' }}
-                                                                disabled={isSubmitting}
-                                                            />
-                                                            <ErrorMessage name={`entries.${index}.section_identifier`} component="div" style={{ color: '#e11d48', fontSize: '0.75rem' }} />
-                                                        </td>
-                                                        <td style={{ padding: '10px' }}>
-                                                            <Field 
-                                                                type="number" 
-                                                                name={`entries.${index}.length_m`} 
-                                                                style={{ padding: '8px', border: '1px solid #d1e5f1', borderRadius: '4px', width: '80px' }}
-                                                                disabled={isSubmitting}
-                                                            />
-                                                            <ErrorMessage name={`entries.${index}.length_m`} component="div" style={{ color: '#e11d48', fontSize: '0.75rem' }} />
-                                                        </td>
-                                                        <td style={{ padding: '10px' }}>
-                                                            <Field 
-                                                                as="select" 
-                                                                name={`entries.${index}.condition`} 
-                                                                style={{ padding: '8px', border: '1px solid #d1e5f1', borderRadius: '4px', width: '100%' }}
-                                                                disabled={isSubmitting}
-                                                            >
-                                                                <option value="">Select</option>
-                                                                <option value="good">Good</option>
-                                                                <option value="minor">Minor Issues</option>
-                                                                <option value="major">Major Defect</option>
-                                                            </Field>
-                                                            <ErrorMessage name={`entries.${index}.condition`} component="div" style={{ color: '#e11d48', fontSize: '0.75rem' }} />
-                                                        </td>
-                                                        <td style={{ padding: '10px' }}>
-                                                            <Field 
-                                                                type="text" 
-                                                                name={`entries.${index}.remarks`} 
-                                                                placeholder="Observations" 
-                                                                style={{ padding: '8px', border: '1px solid #d1e5f1', borderRadius: '4px', width: '100%' }}
-                                                                disabled={isSubmitting}
-                                                            />
-                                                        </td>
-                                                        <td style={{ padding: '10px', textAlign: 'center' }}>
-                                                            {values.entries.length > 1 && (
-                                                                <button 
-                                                                    type="button" 
-                                                                    onClick={() => remove(index)} 
-                                                                    style={{ 
-                                                                        background: '#e74c3c', 
-                                                                        color: 'white', 
-                                                                        border: 'none', 
-                                                                        padding: '5px 10px', 
-                                                                        borderRadius: '4px', 
-                                                                        cursor: isSubmitting ? 'not-allowed' : 'pointer',
-                                                                        opacity: isSubmitting ? 0.5 : 1
-                                                                    }}
-                                                                    disabled={isSubmitting}
-                                                                >
-                                                                    Remove
-                                                                </button>
-                                                            )}
-                                                        </td>
-                                                    </tr>
-                                                ))}
-                                                <tr>
-                                                    <td colSpan="6" style={{ textAlign: 'center', padding: '15px' }}>
-                                                        <button 
-                                                            type="button" 
-                                                            onClick={() => push({ date: today, section_identifier: '', length_m: '', condition: '', remarks: '', action: '' })}
-                                                            style={{ 
-                                                                background: '#e0f0fa', 
-                                                                color: '#1a6fb0', 
-                                                                border: '1px solid #1a6fb0', 
-                                                                padding: '8px 20px', 
-                                                                borderRadius: '6px', 
-                                                                cursor: isSubmitting ? 'not-allowed' : 'pointer', 
-                                                                fontWeight: '600',
-                                                                opacity: isSubmitting ? 0.5 : 1
-                                                            }}
-                                                            disabled={isSubmitting}
-                                                        >
-                                                            <i className="fas fa-plus" style={{ marginRight: '5px' }}></i> Add Inspection Row
-                                                        </button>
-                                                    </td>
-                                                </tr>
-                                            </>
-                                        )}
-                                    </FieldArray>
-                                </tbody>
-                            </table>
-                            {typeof values.entries === 'string' && <ErrorMessage name="entries" component="div" style={{ color: '#e11d48', padding: '10px', textAlign: 'center' }} />}
+                        <div className="grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '20px' }}>
+                            <div className="form-group">
+                                <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600' }}>Drainage Area / Estate <span style={{ color: '#e11d48' }}>*</span></label>
+                                <Field type="text" name="drainage_area" placeholder="e.g. Kerugoya Town" style={{ width: '100%', padding: '12px', border: '1px solid #d1e5f1', borderRadius: '6px' }} />
+                                <ErrorMessage name="drainage_area" component="div" style={{ color: '#e11d48', fontSize: '0.85rem', marginTop: '5px' }} />
+                            </div>
+                            <div className="form-group">
+                                <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600' }}>Sewer Line Ref. No <span style={{ color: '#e11d48' }}>*</span></label>
+                                <Field type="text" name="sewer_line_ref" placeholder="e.g. SL-045" style={{ width: '100%', padding: '12px', border: '1px solid #d1e5f1', borderRadius: '6px' }} />
+                                <ErrorMessage name="sewer_line_ref" component="div" style={{ color: '#e11d48', fontSize: '0.85rem', marginTop: '5px' }} />
+                            </div>
                         </div>
 
-                        {/* 4. New Notes Field */}
-                        <div className="form-group" style={{ marginBottom: '25px' }}>
-                            <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600' }}>General Notes</label>
-                            <Field 
-                                as="textarea" 
-                                name="notes" 
-                                placeholder="Overall inspection observations..." 
-                                style={{ width: '100%', padding: '12px', border: '1px solid #d1e5f1', borderRadius: '6px', minHeight: '100px' }}
-                                disabled={isSubmitting}
-                            />
+                        <h3 style={{ margin: '30px 0 15px', color: '#1a6fb0', fontSize: '1.2rem', borderBottom: '1px solid #e0f0fa', paddingBottom: '10px' }}>
+                            Observations & Findings
+                        </h3>
+
+                        <div className="grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '20px' }}>
+                            <div className="form-group">
+                                <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600' }}>Abnormality Observed <span style={{ color: '#e11d48' }}>*</span></label>
+                                <Field as="select" name="abnormality_observed" style={{ width: '100%', padding: '12px', border: '1px solid #d1e5f1', borderRadius: '6px', background: 'white' }}>
+                                    <option value="none">None (Good Condition)</option>
+                                    <option value="erosion">Erosion along lines</option>
+                                    <option value="missing_cover">Broken/Missing Manhole Cover</option>
+                                    <option value="blockage">Blockage</option>
+                                    <option value="overflow">Overflow/Spillage</option>
+                                    <option value="other">Other (Specify in remarks)</option>
+                                </Field>
+                                <ErrorMessage name="abnormality_observed" component="div" style={{ color: '#e11d48', fontSize: '0.85rem', marginTop: '5px' }} />
+                            </div>
+                            <div className="form-group">
+                                <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600' }}>Remarks / Other Details</label>
+                                <Field type="text" name="abnormality_details" placeholder="Specifics about the issue" style={{ width: '100%', padding: '12px', border: '1px solid #d1e5f1', borderRadius: '6px' }} disabled={values.abnormality_observed === 'none'} />
+                            </div>
+                        </div>
+
+                        <div className="grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '20px', background: '#f9fbfd', padding: '15px', borderRadius: '8px', border: '1px solid #eef5fb' }}>
+                            <div className="form-group" style={{ marginBottom: 0 }}>
+                                <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', color: '#2c3e50' }}>New Mother Accounts Found</label>
+                                <Field type="number" min="0" name="new_mother_accounts" style={{ width: '100%', padding: '10px', border: '1px solid #d1e5f1', borderRadius: '6px' }} />
+                            </div>
+                            <div className="form-group" style={{ marginBottom: 0 }}>
+                                <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', color: '#2c3e50' }}>New Child Accounts Found</label>
+                                <Field type="number" min="0" name="new_child_accounts" style={{ width: '100%', padding: '10px', border: '1px solid #d1e5f1', borderRadius: '6px' }} />
+                            </div>
+                        </div>
+
+                        <div className="form-group" style={{ marginBottom: '20px' }}>
+                            <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600' }}>Immediate Corrective Action Taken</label>
+                            <Field as="textarea" name="corrective_action_taken" placeholder="What did you do on-site?" style={{ width: '100%', padding: '12px', border: '1px solid #d1e5f1', borderRadius: '6px', minHeight: '60px' }} />
+                        </div>
+
+                        <div className="form-group" style={{ marginBottom: '30px' }}>
+                            <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600' }}>Further Action Required</label>
+                            <Field as="textarea" name="further_action_required" placeholder="What needs to be done by the team?" style={{ width: '100%', padding: '12px', border: '1px solid #d1e5f1', borderRadius: '6px', minHeight: '60px' }} />
+                        </div>
+
+                        <div className="signature-area" style={{ display: 'flex', gap: '20px', paddingTop: '20px', borderTop: '1px dashed #d1e5f1', marginBottom: '25px' }}>
+                            <div className="signature-box" style={{ flex: 1 }}>
+                                <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600' }}>Line Patroller</label>
+                                <input type="text" disabled placeholder="Will auto-fill from AuthContext" style={{ width: '100%', padding: '12px', background: '#e5e7eb', border: '1px solid #d1e5f1', borderRadius: '6px' }} />
+                                <div style={{ height: '2px', background: '#d1e5f1', marginTop: '5px', marginBottom: '5px' }}></div>
+                                <span style={{ fontSize: '12px', color: '#6b7280', fontStyle: 'italic' }}>Auto-signed on submission</span>
+                            </div>
                         </div>
 
                         <button 
@@ -328,45 +208,15 @@ const InspectionTable = () => {
                             disabled={isSubmitting}
                             style={{ 
                                 background: isOnline ? '#1a6fb0' : '#6c757d', 
-                                color: 'white', 
-                                border: 'none', 
-                                padding: '12px 25px', 
-                                borderRadius: '6px', 
-                                cursor: isSubmitting ? 'not-allowed' : 'pointer', 
-                                fontSize: '15px', 
-                                fontWeight: '600', 
-                                opacity: isSubmitting ? 0.7 : 1,
-                                transition: 'background 0.3s ease',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                gap: '8px',
-                                width: 'fit-content'
+                                color: 'white', border: 'none', padding: '12px 25px', 
+                                borderRadius: '6px', cursor: isSubmitting ? 'not-allowed' : 'pointer', 
+                                fontSize: '15px', fontWeight: '600', opacity: isSubmitting ? 0.7 : 1,
+                                transition: 'background 0.3s ease'
                             }}
                         >
-                            <i className={`fas ${isOnline ? 'fa-save' : 'fa-cloud-upload-alt'}`}></i> 
-                            {isSubmitting 
-                                ? 'Saving...' 
-                                : isOnline 
-                                    ? 'Finalize Inspection Log' 
-                                    : 'Save Offline'
-                            }
+                            <i className={`fas ${isOnline ? 'fa-paper-plane' : 'fa-save'}`} style={{ marginRight: '8px' }}></i> 
+                            {isSubmitting ? 'Submitting...' : isOnline ? 'Submit Patrol Record' : 'Save Offline'}
                         </button>
-
-                        {/* Show count of entries being saved */}
-                        {!isOnline && values.entries.length > 0 && (
-                            <div style={{ 
-                                marginTop: '10px', 
-                                fontSize: '0.9rem', 
-                                color: '#6c757d',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '5px'
-                            }}>
-                                <i className="fas fa-info-circle"></i>
-                                <span>{values.entries.length} inspection {values.entries.length === 1 ? 'entry' : 'entries'} will be saved offline</span>
-                            </div>
-                        )}
                     </Form>
                 )}
             </Formik>
