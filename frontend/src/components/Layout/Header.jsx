@@ -16,7 +16,7 @@ const Header = () => {
 
                 {/* Profile & Logout Section - Only renders if user is logged in */}
                 {user && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '15px', background: 'rgba(0,0,0,0.15)', padding: '8px 15px', borderRadius: '8px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '15px', background: 'rgba(0,0,0,0.05)', padding: '8px 15px', borderRadius: '8px' }}>
                         <div style={{ textAlign: 'right', fontSize: '0.9rem' }}>
                             <span style={{ display: 'block', fontWeight: 'bold' }}>
                                 <i className="fas fa-user-circle" style={{ marginRight: '5px' }}></i> 
@@ -34,7 +34,7 @@ const Header = () => {
                             style={{ 
                                 background: 'transparent', 
                                 color: 'white', 
-                                border: '1px solid rgba(255,255,255,0.6)', 
+                                border: '1px solid rgba(255,255,255,0.3)', 
                                 padding: '6px 12px', 
                                 borderRadius: '4px', 
                                 cursor: 'pointer',
@@ -47,7 +47,7 @@ const Header = () => {
                             }}
                             onMouseOut={(e) => {
                                 e.currentTarget.style.background = 'transparent';
-                                e.currentTarget.style.borderColor = 'rgba(255,255,255,0.6)';
+                                e.currentTarget.style.borderColor = 'rgba(255,255,255,0.3)';
                             }}
                         >
                             <i className="fas fa-sign-out-alt"></i> Logout
