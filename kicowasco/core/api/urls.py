@@ -5,7 +5,8 @@ from .views import (
     TreatmentLogViewSet, ExhausterViewSet, LicenseViewSet, 
     SludgeCollectionViewSet, ConnectionReportViewSet, SummaryViewSet,
     CustomTokenObtainPairView, WeeklyLinePatrolViewSet, 
-    InletWorksDailyTaskViewSet, DailyFlowRecordViewSet
+    InletWorksDailyTaskViewSet, DailyFlowRecordViewSet, UserViewSet,
+    AttachmentViewSet
 )
 
 # Create a router and register our viewsets with it.
@@ -18,6 +19,8 @@ router.register(r'exhausters', ExhausterViewSet, basename='exhauster')
 router.register(r'licenses', LicenseViewSet, basename='license')
 router.register(r'sludge-collections', SludgeCollectionViewSet, basename='sludgecollection')
 router.register(r'connections', ConnectionReportViewSet, basename='connection')
+router.register(r'users', UserViewSet, basename='user')
+router.register(r'attachments', AttachmentViewSet, basename='attachment')
 
 # Registering the new operational templates
 router.register(r'weekly-patrols', WeeklyLinePatrolViewSet, basename='weeklypatrol')

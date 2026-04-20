@@ -6,10 +6,11 @@ from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.response import Response
 from rest_framework_simplejwt.views import TokenObtainPairView
 from django.contrib.auth import get_user_model
+from django.utils import timezone
 
 from core.models import (
     Incident, Repair, Inspection, TreatmentLog, Exhauster, 
-    License, SludgeCollection, ConnectionReport,
+    License, SludgeCollection, ConnectionReport, Attachment,
     WeeklyLinePatrol, InletWorksDailyTask, DailyFlowRecord
 )
 from core.permissions import IsSupervisor
@@ -18,7 +19,8 @@ from .serializers import (
     TreatmentLogSerializer, ExhausterSerializer, LicenseSerializer,
     SludgeCollectionSerializer, ConnectionReportSerializer,
     CustomTokenObtainPairSerializer, WeeklyLinePatrolSerializer,
-    InletWorksDailyTaskSerializer, DailyFlowRecordSerializer
+    InletWorksDailyTaskSerializer, DailyFlowRecordSerializer,
+    AttachmentSerializer, UserSerializer
 )
 
 # --- CUSTOM AUTHENTICATION VIEW ---
@@ -113,6 +115,42 @@ class RepairViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         serializer.save(technician=self.request.user)
 
+    @action(detail=True, methods=['patch'], permission_classes=[IsAuthenticated, IsSupervisor])
+    def certify(self, request, pk=None):
+        """
+        Supervisor-only endpoint to digitally sign and certify a repair,
+        which also automatically closes the linked incident.
+        """
+        repair = self.get_object()
+        
+        if repair.certified_at:
+            return Response(
+                {'error': 'This repair has already been certified.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        signature = request.FILES.get('supervisor_signature')
+        
+        if not signature:
+            return Response(
+                {'error': 'Supervisor signature is required to certify a repair.'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
+        # Update the Repair record
+        repair.supervisor = request.user
+        repair.supervisor_signature = signature
+        repair.certified_at = timezone.now()
+        repair.save()
+        
+        # Advance the State Machine: Automatically resolve the Incident!
+        if repair.incident:
+            repair.incident.status = 'resolved'
+            repair.incident.save()
+        
+        serializer = self.get_serializer(repair)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
 class InspectionViewSet(viewsets.ModelViewSet):
     queryset = Inspection.objects.all().order_by('-start_date')
     serializer_class = InspectionSerializer
@@ -169,6 +207,34 @@ class DailyFlowRecordViewSet(viewsets.ModelViewSet):
     queryset = DailyFlowRecord.objects.all().order_by('-date')
     serializer_class = DailyFlowRecordSerializer
     permission_classes = [IsAuthenticated]
+
+
+# --- USER VIEWSET ---
+
+class UserViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    API endpoint for retrieving user data (read-only).
+    Used by the dispatch dashboard to list available field staff for assignment.
+    """
+    queryset = User.objects.all()
+    serializer_class = UserSerializer
+    permission_classes = [IsAuthenticated]
+
+
+# --- ATTACHMENT VIEWSET ---
+
+class AttachmentViewSet(viewsets.ModelViewSet):
+    """
+    API endpoint for uploading and managing attachments (photos, documents, etc.)
+    for incidents, repairs, and other entities.
+    """
+    queryset = Attachment.objects.all()
+    serializer_class = AttachmentSerializer
+    permission_classes = [IsAuthenticated]
+    parser_classes = (MultiPartParser, FormParser)
+
+    def perform_create(self, serializer):
+        serializer.save(uploaded_by=self.request.user)
 
 
 # --- SUMMARY VIEWSET ---

@@ -2,7 +2,8 @@ from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from core.models import (
     Incident, Repair, Inspection, InspectionEntry, TreatmentLog, TreatmentParameter,
-    Exhauster, License, SludgeCollection, ConnectionReport, ConnectionApplication
+    Exhauster, License, SludgeCollection, ConnectionReport, ConnectionApplication,
+    Attachment
 )
 from core.serializers import (
     InspectionSerializer, InspectionEntrySerializer,
@@ -11,7 +12,8 @@ from core.serializers import (
     ConnectionReportSerializer, ConnectionApplicationSerializer,
     UserSerializer, IncidentSerializer, RepairSerializer,
     CustomTokenObtainPairSerializer, WeeklyLinePatrolSerializer,
-    InletWorksDailyTaskSerializer, DailyFlowRecordSerializer, FlowReadingSerializer
+    InletWorksDailyTaskSerializer, DailyFlowRecordSerializer, FlowReadingSerializer,
+    AttachmentSerializer
 )
 
 User = get_user_model()
@@ -24,5 +26,6 @@ __all__ = [
     'ExhausterSerializer', 'LicenseSerializer', 'SludgeCollectionSerializer',
     'ConnectionReportSerializer', 'ConnectionApplicationSerializer',
     'CustomTokenObtainPairSerializer', 'WeeklyLinePatrolSerializer',
-    'InletWorksDailyTaskSerializer', 'DailyFlowRecordSerializer', 'FlowReadingSerializer'
+    'InletWorksDailyTaskSerializer', 'DailyFlowRecordSerializer', 'FlowReadingSerializer',
+    'AttachmentSerializer'
 ]

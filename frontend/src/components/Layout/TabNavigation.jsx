@@ -14,6 +14,7 @@ const TabNavigation = () => {
         treatment: ['admin', 'superintendent', 'supervisor', 'lab_tech', 'operator'],
         sludge: ['admin', 'superintendent', 'supervisor', 'operator'],
         connections: ['admin', 'superintendent', 'supervisor'],
+        dispatch: ['admin', 'superintendent', 'supervisor'],
         summary: ['admin', 'superintendent']
     };
 
@@ -49,6 +50,11 @@ const TabNavigation = () => {
             {hasAccess('connections') && (
                 <NavLink to="/connections" className={({ isActive }) => isActive ? 'tab active' : 'tab'}>
                     <i className="fas fa-network-wired"></i> Connections
+                </NavLink>
+            )}
+            {hasAccess('dispatch') && (
+                <NavLink to="/dispatch" className={({ isActive }) => isActive ? 'tab active' : 'tab'}>
+                    <i className="fas fa-satellite-dish"></i> Dispatch
                 </NavLink>
             )}
             {hasAccess('summary') && (
