@@ -32,13 +32,37 @@ class Incident(models.Model):
         ('closed', 'Closed'),
     ]
 
+    CATEGORY_CHOICES = [
+        ('blockage', 'Blockage'),
+        ('burst', 'Burst Pipe'),
+        ('spillage', 'Sewer Spillage'),
+        ('odor', 'Foul Odor'),
+        ('missing_cover', 'Missing Manhole Cover'),
+        ('illegal_connection', 'Illegal Connection'),
+        ('other', 'Other'),
+    ]
+
+    SEVERITY_CHOICES = [
+        ('high', 'High (Emergency/Critical)'),
+        ('medium', 'Medium (Urgent/Operational)'),
+        ('low', 'Low (Routine/Minor)'),
+    ]
+
     # Core Incident Data
     reported_at = models.DateTimeField()
-    location_text = models.CharField(max_length=255, blank=True)
+    
+    # Upgraded Location Data
+    location_text = models.CharField(max_length=255, blank=True, help_text="Landmarks or physical description")
+    latitude = models.DecimalField(max_digits=10, decimal_places=7, null=True, blank=True)
+    longitude = models.DecimalField(max_digits=10, decimal_places=7, null=True, blank=True)
 
+    # Upgraded Classification
+    category = models.CharField(max_length=50, choices=CATEGORY_CHOICES, default='other')
+    severity = models.CharField(max_length=20, choices=SEVERITY_CHOICES, default='low')
+    
     reported_by_name = models.CharField(max_length=200)
     reported_contact = models.CharField(max_length=100, blank=True)
-    description = models.TextField()
+    description = models.TextField(help_text="Additional details about the incident")
     status = models.CharField(max_length=20, choices=INCIDENT_STATUS, default='new')
 
     # Relationships & Audit Trail
@@ -82,7 +106,7 @@ class Incident(models.Model):
         ordering = ['-reported_at', '-created_at']
 
     def __str__(self):
-        return f"Incident #{self.id} - {self.location_text} ({self.get_status_display()})"
+        return f"Incident #{self.id} - {self.get_category_display()} ({self.get_severity_display()})"
 
 
 # --- REPAIR MANAGEMENT MODELS ---

@@ -1,15 +1,18 @@
 from rest_framework import viewsets, status
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.decorators import action
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.response import Response
 from rest_framework_simplejwt.views import TokenObtainPairView
+from django.contrib.auth import get_user_model
 
 from core.models import (
     Incident, Repair, Inspection, TreatmentLog, Exhauster, 
     License, SludgeCollection, ConnectionReport,
     WeeklyLinePatrol, InletWorksDailyTask, DailyFlowRecord
 )
+from core.permissions import IsSupervisor
 from .serializers import (
     IncidentSerializer, RepairSerializer, InspectionSerializer,
     TreatmentLogSerializer, ExhausterSerializer, LicenseSerializer,
@@ -29,13 +32,77 @@ class CustomTokenObtainPairView(TokenObtainPairView):
 
 # --- EXISTING VIEWSETS ---
 
+User = get_user_model()
+
 class IncidentViewSet(viewsets.ModelViewSet):
     queryset = Incident.objects.all().order_by('-reported_at')
     serializer_class = IncidentSerializer
     permission_classes = [IsAuthenticated]
 
     def perform_create(self, serializer):
+        # Auto-assign the creator when a new incident is logged
         serializer.save(created_by=self.request.user)
+
+    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated, IsSupervisor])
+    def assign(self, request, pk=None):
+        """
+        Supervisor-Only Endpoint: Assigns an incident to a field technician 
+        and automatically advances the state machine.
+        """
+        incident = self.get_object()
+        user_id = request.data.get('user_id')
+        
+        if not user_id:
+            return Response({'error': 'A user_id is required to assign an incident.'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            technician = User.objects.get(id=user_id)
+            
+            # Update the record
+            incident.assigned_to = technician
+            incident.status = 'assigned' # Advance the state machine
+            incident.save()
+            
+            serializer = self.get_serializer(incident)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+            
+        except User.DoesNotExist:
+            return Response({'error': 'Technician not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+    @action(detail=True, methods=['post'])
+    def update_status(self, request, pk=None):
+        """
+        Enforces strict business rules on who can change an incident's status.
+        """
+        incident = self.get_object()
+        new_status = request.data.get('status')
+        user_role = getattr(request.user, 'role', '')
+
+        if not new_status:
+            return Response({'error': 'status is required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # --- RULE 1: Grade 6 Attendants ---
+        if user_role == 'attendant':
+            # They can only move an assigned task to 'in_progress' when they arrive on site
+            if new_status == 'in_progress' and incident.status == 'assigned':
+                if incident.assigned_to != request.user:
+                    return Response({'error': 'You can only start incidents assigned specifically to you.'}, status=status.HTTP_403_FORBIDDEN)
+            
+            # They are strictly forbidden from closing tickets directly
+            elif new_status in ['resolved', 'closed']:
+                return Response({
+                    'error': 'Attendants cannot directly resolve incidents. You must submit a Repair Completion Certificate for Supervisor approval.'
+                }, status=status.HTTP_403_FORBIDDEN)
+            else:
+                return Response({'error': 'Invalid status transition for your role.'}, status=status.HTTP_403_FORBIDDEN)
+
+        # --- RULE 2: Grade 4 Supervisors ---
+        # Supervisors have authority to override and update statuses freely
+        
+        incident.status = new_status
+        incident.save()
+        serializer = self.get_serializer(incident)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
 class RepairViewSet(viewsets.ModelViewSet):
     queryset = Repair.objects.all().order_by('-created_at')

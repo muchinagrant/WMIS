@@ -421,7 +421,8 @@ class IncidentSerializer(serializers.ModelSerializer):
     class Meta:
         model = Incident
         fields = [
-            'id', 'reported_at', 'location_text', 'reported_by_name',
+            'id', 'reported_at', 'location_text', 'latitude', 'longitude', 
+            'category', 'severity', 'reported_by_name',
             'reported_contact', 'description', 'status', 'assigned_to',
             'assigned_to_name', 'received_by', 'received_date',
             'foreman_signed_by', 'foreman_signature_image', 'created_by',
