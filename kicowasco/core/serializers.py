@@ -3,7 +3,9 @@ from rest_framework import serializers
 from .models import (
     Repair, Attachment, Inspection, InspectionEntry, 
     TreatmentLog, TreatmentParameter, Incident, User,
-    Exhauster, License, SludgeCollection, ConnectionReport, ConnectionApplication
+    Exhauster, License, SludgeCollection, ConnectionReport, ConnectionApplication,
+    WeeklyLinePatrol, InletWorksDailyTask, DailyFlowRecord, FlowReading,
+    Material, MaterialRequisition  # NEW
 )
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
@@ -382,7 +384,32 @@ class SludgeCollectionSummarySerializer(serializers.Serializer):
 
 # --- REPAIR SERIALIZERS ---
 
+# --- INVENTORY SERIALIZERS ---
+
+class MaterialSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Material
+        fields = ['id', 'name', 'code', 'unit_of_measure', 'current_stock', 'minimum_threshold']
+
+
+class MaterialRequisitionSerializer(serializers.ModelSerializer):
+    # write_only: React sends the material ID
+    material_id = serializers.PrimaryKeyRelatedField(
+        queryset=Material.objects.all(), source='material', write_only=True
+    )
+    # read_only: React receives the friendly names for the UI
+    material_name = serializers.CharField(source='material.name', read_only=True)
+    unit = serializers.CharField(source='material.unit_of_measure', read_only=True)
+
+    class Meta:
+        model = MaterialRequisition
+        fields = ['id', 'material_id', 'material_name', 'unit', 'quantity_used']
+
+
 class RepairSerializer(serializers.ModelSerializer):
+    # NEW: Nested serializer for materials
+    requisitions = MaterialRequisitionSerializer(many=True, required=False)
+    
     technician_name = serializers.ReadOnlyField(source='technician.get_full_name')
     supervisor_name = serializers.ReadOnlyField(source='supervisor.get_full_name')
     incident_details = serializers.SerializerMethodField()
@@ -392,7 +419,7 @@ class RepairSerializer(serializers.ModelSerializer):
         model = Repair
         fields = [
             'id', 'incident', 'incident_details', 'completion_date', 'location',
-            'description_of_work', 'materials_used', 'technician',
+            'description_of_work', 'materials_notes', 'requisitions', 'technician',
             'technician_name', 'supervisor', 'supervisor_name',
             'supervisor_signature', 'certified_at', 'created_at', 'updated_at',
             'attachments'
@@ -408,6 +435,42 @@ class RepairSerializer(serializers.ModelSerializer):
                 'status': obj.incident.status
             }
         return None
+
+    def create(self, validated_data):
+        """
+        Intercepts the creation of a Repair to handle nested inventory deduction.
+        If any stock is insufficient, it raises a ValidationError, triggering 
+        the atomic transaction in views.py to roll back everything.
+        """
+        # 1. Pop the requisitions array out of the validated data
+        requisitions_data = validated_data.pop('requisitions', [])
+        
+        # 2. Create the parent Repair record
+        repair = Repair.objects.create(**validated_data)
+        
+        # 3. Loop through requested materials, deduct stock, and create bridge records
+        for req_data in requisitions_data:
+            material = req_data['material']
+            quantity = req_data['quantity_used']
+            
+            # STRICT BUSINESS LOGIC: Prevent negative inventory
+            if material.current_stock < quantity:
+                raise serializers.ValidationError({
+                    "inventory": f"Insufficient stock for {material.name}. Requested: {quantity}, Available: {material.current_stock}"
+                })
+            
+            # Deduct the stock
+            material.current_stock -= quantity
+            material.save()
+            
+            # Create the requisition record
+            MaterialRequisition.objects.create(
+                repair=repair, 
+                material=material, 
+                quantity_used=quantity
+            )
+            
+        return repair
 
 
 # --- INCIDENT SERIALIZER ---

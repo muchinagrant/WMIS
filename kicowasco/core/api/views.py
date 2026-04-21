@@ -7,11 +7,13 @@ from rest_framework.response import Response
 from rest_framework_simplejwt.views import TokenObtainPairView
 from django.contrib.auth import get_user_model
 from django.utils import timezone
+from django.db import transaction  # NEW: Critical for atomic inventory deduction
 
 from core.models import (
     Incident, Repair, Inspection, TreatmentLog, Exhauster, 
     License, SludgeCollection, ConnectionReport, Attachment,
-    WeeklyLinePatrol, InletWorksDailyTask, DailyFlowRecord
+    WeeklyLinePatrol, InletWorksDailyTask, DailyFlowRecord,
+    Material, MaterialRequisition  # NEW
 )
 from core.permissions import IsSupervisor
 from .serializers import (
@@ -20,7 +22,7 @@ from .serializers import (
     SludgeCollectionSerializer, ConnectionReportSerializer,
     CustomTokenObtainPairSerializer, WeeklyLinePatrolSerializer,
     InletWorksDailyTaskSerializer, DailyFlowRecordSerializer,
-    AttachmentSerializer, UserSerializer
+    AttachmentSerializer, UserSerializer, MaterialSerializer  # NEW
 )
 
 # --- CUSTOM AUTHENTICATION VIEW ---
@@ -60,9 +62,10 @@ class IncidentViewSet(viewsets.ModelViewSet):
         try:
             technician = User.objects.get(id=user_id)
             
-            # Update the record
+            # UPGRADED: Advance state machine AND automate the SLA timer
             incident.assigned_to = technician
-            incident.status = 'assigned'  # Advance the state machine
+            incident.status = 'assigned'
+            incident.assigned_at = timezone.now()  # <-- AUTOMATED TIMESTAMP
             incident.save()
             
             serializer = self.get_serializer(incident)
@@ -85,21 +88,22 @@ class IncidentViewSet(viewsets.ModelViewSet):
         
         # --- RULE 1: Grade 6 Attendants ---
         if user_role == 'attendant':
-            # They can only move an assigned task to 'in_progress' when they arrive on site
             if new_status == 'in_progress' and incident.status == 'assigned':
                 if incident.assigned_to != request.user:
                     return Response({'error': 'You can only start incidents assigned specifically to you.'}, status=status.HTTP_403_FORBIDDEN)
-            
-            # They are strictly forbidden from closing tickets directly
+                
+                # UPGRADED: Start the active work timer automatically
+                incident.in_progress_at = timezone.now()  # <-- AUTOMATED TIMESTAMP
+                
             elif new_status in ['resolved', 'closed']:
                 return Response({
                     'error': 'Attendants cannot directly resolve incidents. You must submit a Repair Completion Certificate for Supervisor approval.'
                 }, status=status.HTTP_403_FORBIDDEN)
-            else:
+            # Handle exception states for plumbers (e.g., waiting for parts)
+            elif new_status not in ['on_hold_materials', 'on_hold_equipment']:
                 return Response({'error': 'Invalid status transition for your role.'}, status=status.HTTP_403_FORBIDDEN)
 
-        # --- RULE 2: Grade 4 Supervisors ---
-        # Supervisors have authority to override and update statuses freely
+        # --- RULE 2: Grade 4 Supervisors override authority ---
         
         incident.status = new_status
         incident.save()
@@ -111,6 +115,15 @@ class RepairViewSet(viewsets.ModelViewSet):
     serializer_class = RepairSerializer
     permission_classes = [IsAuthenticated]
     parser_classes = (MultiPartParser, FormParser)
+
+    # UPGRADED: Wrapping creation in a transaction to protect inventory
+    @transaction.atomic
+    def create(self, request, *args, **kwargs):
+        """
+        We override create to wrap it in an atomic transaction.
+        If the Serializer fails to deduct inventory, the whole request rolls back.
+        """
+        return super().create(request, *args, **kwargs)
 
     def perform_create(self, serializer):
         serializer.save(technician=self.request.user)
@@ -130,7 +143,6 @@ class RepairViewSet(viewsets.ModelViewSet):
             )
         
         signature = request.FILES.get('supervisor_signature')
-        
         if not signature:
             return Response(
                 {'error': 'Supervisor signature is required to certify a repair.'}, 
@@ -143,9 +155,10 @@ class RepairViewSet(viewsets.ModelViewSet):
         repair.certified_at = timezone.now()
         repair.save()
         
-        # Advance the State Machine: Automatically resolve the Incident!
+        # UPGRADED: Advance State Machine AND close the SLA timer
         if repair.incident:
             repair.incident.status = 'resolved'
+            repair.incident.resolved_at = timezone.now()  # <-- FINAL AUTOMATED TIMESTAMP
             repair.incident.save()
         
         serializer = self.get_serializer(repair)
@@ -206,6 +219,15 @@ class DailyFlowRecordViewSet(viewsets.ModelViewSet):
     """
     queryset = DailyFlowRecord.objects.all().order_by('-date')
     serializer_class = DailyFlowRecordSerializer
+    permission_classes = [IsAuthenticated]
+
+
+# --- INVENTORY VIEWSET ---
+
+class MaterialViewSet(viewsets.ReadOnlyModelViewSet):
+    """API endpoint for fetching available inventory."""
+    queryset = Material.objects.all().order_by('name')
+    serializer_class = MaterialSerializer
     permission_classes = [IsAuthenticated]
 
 

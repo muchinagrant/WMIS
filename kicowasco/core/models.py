@@ -24,10 +24,13 @@ class Incident(models.Model):
     Model to capture field incidents (blockages, spills, odors)
     and create an auditable tracking record.
     """
+    # UPGRADED: Added exception states for field realities
     INCIDENT_STATUS = [
         ('new', 'New'),
         ('assigned', 'Assigned'),
         ('in_progress', 'In Progress'),
+        ('on_hold_materials', 'On Hold - Awaiting Materials'),
+        ('on_hold_equipment', 'On Hold - Requires Equipment/Excavator'),
         ('resolved', 'Resolved'),
         ('closed', 'Closed'),
     ]
@@ -50,6 +53,11 @@ class Incident(models.Model):
 
     # Core Incident Data
     reported_at = models.DateTimeField()
+    
+    # NEW: SLA Timestamps to track Time-to-Resolution (TTR)
+    assigned_at = models.DateTimeField(null=True, blank=True)
+    in_progress_at = models.DateTimeField(null=True, blank=True)
+    resolved_at = models.DateTimeField(null=True, blank=True)
     
     # Upgraded Location Data
     location_text = models.CharField(max_length=255, blank=True, help_text="Landmarks or physical description")
@@ -124,7 +132,8 @@ class Repair(models.Model):
     completion_date = models.DateField()
     location = models.CharField(max_length=255)
     description_of_work = models.TextField()
-    materials_used = models.TextField(blank=True)
+    # UPGRADED: Changed from materials_used. Actual inventory will use MaterialRequisition.
+    materials_notes = models.TextField(blank=True, help_text="General notes on materials. Strict inventory uses MaterialRequisition.")
     technician = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -628,3 +637,39 @@ class FlowReading(models.Model):
     time_slot = models.CharField(max_length=10, choices=TIME_CHOICES)
     meter_1 = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     meter_2 = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+
+
+# --- INVENTORY MODELS ---
+
+class Material(models.Model):
+    """
+    Master inventory list for KICOWASCO stores (e.g., pipes, cement, covers).
+    """
+    name = models.CharField(max_length=200)
+    code = models.CharField(max_length=50, unique=True, help_text="Stock keeping unit (SKU) or item code")
+    unit_of_measure = models.CharField(max_length=50, help_text="e.g., pieces, meters, kg, bags")
+    current_stock = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    minimum_threshold = models.DecimalField(max_digits=10, decimal_places=2, default=5, help_text="Alert when stock falls below this level")
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['name']
+
+    def __str__(self):
+        return f"{self.name} ({self.current_stock} {self.unit_of_measure} available)"
+
+
+class MaterialRequisition(models.Model):
+    """
+    Bridge model tracking exactly which materials were deducted from inventory for a specific repair.
+    """
+    repair = models.ForeignKey(Repair, on_delete=models.CASCADE, related_name='requisitions')
+    # Using PROTECT so a material cannot be deleted from the database if it was used in past repairs
+    material = models.ForeignKey(Material, on_delete=models.PROTECT, related_name='requisitions')
+    quantity_used = models.DecimalField(max_digits=10, decimal_places=2)
+    requisitioned_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.quantity_used}x {self.material.name} for Repair #{self.repair.id}"

@@ -3,7 +3,8 @@ from django.contrib.auth.admin import UserAdmin
 from .models import (
     User, Incident, Repair, Inspection, InspectionEntry,
     TreatmentLog, TreatmentParameter, Exhauster, License,
-    SludgeCollection, ConnectionReport, ConnectionApplication
+    SludgeCollection, ConnectionReport, ConnectionApplication,
+    Material, MaterialRequisition  # NEW
 )
 
 # --- 1. USER MANAGEMENT ---
@@ -29,6 +30,15 @@ class RepairAdmin(admin.ModelAdmin):
     list_display = ('id', 'location', 'completion_date', 'technician', 'supervisor')
     list_filter = ('completion_date',)
     search_fields = ('location', 'description_of_work')
+
+# --- 2B. INVENTORY MANAGEMENT ---
+@admin.register(Material)
+class MaterialAdmin(admin.ModelAdmin):
+    list_display = ('name', 'code', 'current_stock', 'unit_of_measure', 'minimum_threshold')
+    search_fields = ('name', 'code')
+    list_filter = ('unit_of_measure',)
+
+admin.site.register(MaterialRequisition)
 
 # --- 3. INFRASTRUCTURE INSPECTION ---
 class InspectionEntryInline(admin.TabularInline):

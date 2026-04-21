@@ -3,7 +3,8 @@ from django.contrib.auth import get_user_model
 from core.models import (
     Incident, Repair, Inspection, InspectionEntry, TreatmentLog, TreatmentParameter,
     Exhauster, License, SludgeCollection, ConnectionReport, ConnectionApplication,
-    Attachment
+    Attachment,
+    Material, MaterialRequisition  # NEW
 )
 from core.serializers import (
     InspectionSerializer, InspectionEntrySerializer,
@@ -13,7 +14,8 @@ from core.serializers import (
     UserSerializer, IncidentSerializer, RepairSerializer,
     CustomTokenObtainPairSerializer, WeeklyLinePatrolSerializer,
     InletWorksDailyTaskSerializer, DailyFlowRecordSerializer, FlowReadingSerializer,
-    AttachmentSerializer
+    AttachmentSerializer,
+    MaterialSerializer, MaterialRequisitionSerializer  # NEW
 )
 
 User = get_user_model()
@@ -27,5 +29,6 @@ __all__ = [
     'ConnectionReportSerializer', 'ConnectionApplicationSerializer',
     'CustomTokenObtainPairSerializer', 'WeeklyLinePatrolSerializer',
     'InletWorksDailyTaskSerializer', 'DailyFlowRecordSerializer', 'FlowReadingSerializer',
-    'AttachmentSerializer'
+    'AttachmentSerializer',
+    'MaterialSerializer', 'MaterialRequisitionSerializer'  # NEW
 ]

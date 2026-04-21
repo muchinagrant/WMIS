@@ -108,11 +108,21 @@ const DispatchDashboard = () => {
                                     <td style={{ padding: '15px' }}>{getSeverityBadge(inc.severity)}</td>
                                     <td style={{ padding: '15px' }}>
                                         <span style={{ 
-                                            padding: '4px 8px', borderRadius: '4px', fontSize: '0.8rem', fontWeight: '600',
-                                            background: inc.status === 'new' ? '#e0e7ff' : inc.status === 'resolved' ? '#dcfce3' : '#f3e8ff',
-                                            color: inc.status === 'new' ? '#3730a3' : inc.status === 'resolved' ? '#166534' : '#6b21a8'
+                                            padding: '6px 10px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 'bold', letterSpacing: '0.5px',
+                                            background: 
+                                                inc.status === 'new' ? '#e0e7ff' : 
+                                                inc.status === 'assigned' ? '#dbeafe' :
+                                                inc.status === 'in_progress' ? '#fef3c7' :
+                                                inc.status.includes('on_hold') ? '#fee2e2' : 
+                                                inc.status === 'resolved' ? '#dcfce3' : '#f1f5f9',
+                                            color: 
+                                                inc.status === 'new' ? '#3730a3' : 
+                                                inc.status === 'assigned' ? '#1e40af' :
+                                                inc.status === 'in_progress' ? '#92400e' :
+                                                inc.status.includes('on_hold') ? '#991b1b' : 
+                                                inc.status === 'resolved' ? '#166534' : '#475569'
                                         }}>
-                                            {inc.status.replace('_', ' ').toUpperCase()}
+                                            {inc.status.replace(/_/g, ' ').toUpperCase()}
                                         </span>
                                     </td>
                                     <td style={{ padding: '15px' }}>
