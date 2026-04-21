@@ -62,7 +62,7 @@ class IncidentViewSet(viewsets.ModelViewSet):
             
             # Update the record
             incident.assigned_to = technician
-            incident.status = 'assigned' # Advance the state machine
+            incident.status = 'assigned'  # Advance the state machine
             incident.save()
             
             serializer = self.get_serializer(incident)
