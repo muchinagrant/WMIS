@@ -1,14 +1,11 @@
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect } from 'react';
 import api from '../api/axios';
-import AuthContext from '../context/AuthContext';
 
 const DispatchDashboard = () => {
     const [incidents, setIncidents] = useState([]);
     const [technicians, setTechnicians] = useState([]);
     const [loading, setLoading] = useState(true);
     const [actionStatus, setActionStatus] = useState({ type: '', message: '' });
-    
-    const { user } = useContext(AuthContext);
 
     // Fetch Incidents and available Technicians on load
     useEffect(() => {
