@@ -568,8 +568,6 @@ class ConnectionReportSerializer(serializers.ModelSerializer):
             
         return report
 
-from .models import WeeklyLinePatrol, InletWorksDailyTask, DailyFlowRecord, FlowReading
-
 # --- F201: WEEKLY LINE PATROLS ---
 
 class WeeklyLinePatrolSerializer(serializers.ModelSerializer):
