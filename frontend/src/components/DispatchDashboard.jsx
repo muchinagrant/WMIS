@@ -19,15 +19,28 @@ const DispatchDashboard = () => {
         try {
             const incidentRes = await api.get('/api/incidents/');
             
+            // Safely support both DRF paginated responses and flat arrays.
+            const incidentsArray = incidentRes.data.results || incidentRes.data;
+
+            if (!Array.isArray(incidentsArray)) {
+                throw new Error('Received invalid data format for incidents.');
+            }
+            
             // Filter view based on role
             if (isSupervisor) {
-                setIncidents(incidentRes.data);
+                setIncidents(incidentsArray);
                 const userRes = await api.get('/api/users/');
-                const fieldStaff = userRes.data.filter(u => u.role === 'attendant' || u.role === 'operator');
-                setTechnicians(fieldStaff);
+
+                // Safely support both DRF paginated responses and flat arrays.
+                const usersArray = userRes.data.results || userRes.data;
+
+                if (Array.isArray(usersArray)) {
+                    const fieldStaff = usersArray.filter(u => u.role === 'attendant' || u.role === 'operator');
+                    setTechnicians(fieldStaff);
+                }
             } else {
                 // Technicians only see their own assigned incidents
-                const myIncidents = incidentRes.data.filter(inc => inc.assigned_to === user?.user_id);
+                const myIncidents = incidentsArray.filter(inc => inc.assigned_to === user?.user_id);
                 setIncidents(myIncidents);
             }
         } catch (error) {
