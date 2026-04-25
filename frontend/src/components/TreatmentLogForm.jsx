@@ -6,76 +6,53 @@ import { SyncContext } from '../context/SyncContext';
 import { addToQueue } from '../api/offlineQueue';
 import AuthContext from '../context/AuthContext';
 
-const DailyPlantSchema = Yup.object().shape({
-    date: Yup.date().required('Date is required'),
-    readings: Yup.array().of(
+const TreatmentLogSchema = Yup.object().shape({
+    report_date: Yup.date().required('Date is required'),
+    shift: Yup.string().oneOf(['Day', 'Night']).required('Shift is required'),
+    parameters: Yup.array().of(
         Yup.object().shape({
-            meter_1: Yup.number().min(0, 'Must be positive').nullable().transform((v) => (v === '' || isNaN(v) ? null : v)),
-            meter_2: Yup.number().min(0, 'Must be positive').nullable().transform((v) => (v === '' || isNaN(v) ? null : v))
+            parameter: Yup.string().required('Parameter name required'),
+            influent_value: Yup.number().typeError('Must be a number').nullable(),
+            effluent_value: Yup.number().typeError('Must be a number').nullable()
         })
-    ),
-    abnormalities: Yup.string(),
-    remarks: Yup.string()
+    )
 });
 
 const TreatmentLogForm = () => {
-    const [submitStatus, setSubmitStatus] = useState({ type: '', message: '' });
+    const [statusMsg, setStatusMsg] = useState({ type: '', message: '' });
     const { isOnline, refreshQueueCount } = useContext(SyncContext);
     const { user } = useContext(AuthContext);
 
     const initialValues = {
-        date: new Date().toISOString().split('T')[0],
-        readings: [
-            { time_slot: '09:00', label: '9:00 AM', meter_1: '', meter_2: '' },
-            { time_slot: '12:00', label: '12:00 PM', meter_1: '', meter_2: '' },
-            { time_slot: '15:00', label: '3:00 PM', meter_1: '', meter_2: '' },
-            { time_slot: '18:00', label: '6:00 PM', meter_1: '', meter_2: '' }
-        ],
-        raking_t1: false,
-        raking_t2: false,
-        raking_t3: false,
-        screenings_burial: false,
-        grit_scooping: false,
-        grit_burial: false,
-        abnormalities: '',
-        remarks: ''
+        report_date: new Date().toISOString().split('T')[0],
+        shift: 'Day',
+        parameters: [
+            { parameter: 'BOD (mg/l)', influent_value: '', effluent_value: '' },
+            { parameter: 'TSS (mg/l)', influent_value: '', effluent_value: '' },
+            { parameter: 'pH', influent_value: '', effluent_value: '' }
+        ]
     };
 
     const handleSubmit = async (values, { setSubmitting, resetForm }) => {
-        setSubmitStatus({ type: '', message: '' });
+        setStatusMsg({ type: '', message: '' });
 
-        const flowPayload = {
-            date: values.date,
-            remarks: values.remarks,
-            readings: values.readings
-                .filter(r => r.meter_1 !== '' || r.meter_2 !== '')
-                .map(r => ({
-                    time_slot: r.time_slot,
-                    meter_1: r.meter_1 || 0,
-                    meter_2: r.meter_2 || 0
+        const payload = {
+            report_date: values.report_date,
+            shift: values.shift,
+            parameters: values.parameters
+                .filter(p => p.influent_value !== '' || p.effluent_value !== '')
+                .map(p => ({
+                    parameter: p.parameter,
+                    influent_value: p.influent_value || 0,
+                    effluent_value: p.effluent_value || 0
                 }))
-        };
-
-        const taskPayload = {
-            date: values.date,
-            raking_t1: values.raking_t1,
-            raking_t2: values.raking_t2,
-            raking_t3: values.raking_t3,
-            screenings_burial: values.screenings_burial,
-            grit_scooping: values.grit_scooping,
-            grit_burial: values.grit_burial,
-            abnormalities: values.abnormalities
         };
 
         try {
             if (isOnline) {
-                const [flowRes, taskRes] = await Promise.all([
-                    api.post('/api/daily-flow-records/', flowPayload),
-                    api.post('/api/inlet-daily-tasks/', taskPayload)
-                ]);
-
-                if (flowRes.status === 201 && taskRes.status === 201) {
-                    setSubmitStatus({ type: 'success', message: 'Inlet Works Logs (Flow & Screens) submitted successfully!' });
+                const res = await api.post('/api/treatment-logs/', payload);
+                if (res.status === 201) {
+                    setStatusMsg({ type: 'success', message: 'Treatment Plant Efficiency log submitted successfully!' });
                     resetForm();
                 }
             } else {
@@ -83,20 +60,17 @@ const TreatmentLogForm = () => {
             }
         } catch (error) {
             if (!navigator.onLine || error.message === 'Network Error' || error.message === 'Network offline' || error.code === 'ERR_NETWORK') {
-                await addToQueue('/api/daily-flow-records/', flowPayload, 'POST', { isFlowRecord: true, date: values.date });
-                await addToQueue('/api/inlet-daily-tasks/', taskPayload, 'POST', { isInletTask: true, date: values.date });
-
+                await addToQueue('/api/treatment-logs/', payload, 'POST', { isTreatmentLog: true, date: values.report_date, shift: values.shift });
                 await refreshQueueCount();
-
-                setSubmitStatus({
+                setStatusMsg({
                     type: 'info',
-                    message: 'Saved offline. Both Flow and Screen logs will sync automatically when connection is restored.'
+                    message: 'Treatment log saved offline and will sync when connection is restored.'
                 });
                 resetForm();
             } else {
-                setSubmitStatus({
+                setStatusMsg({
                     type: 'error',
-                    message: 'Failed to submit logs. Check for existing entries on this date.'
+                    message: 'Failed to submit treatment log.'
                 });
             }
         } finally {
@@ -106,8 +80,8 @@ const TreatmentLogForm = () => {
 
     return (
         <div className="form-section active">
-            <h2 style={{ color: '#1a6fb0', marginBottom: '25px', paddingBottom: '15px', borderBottom: '2px solid #e0f0fa', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <i className="fas fa-industry"></i> Inlet Works Daily Log
+            <h2 style={{ color: '#0369a1', marginBottom: '25px', paddingBottom: '15px', borderBottom: '2px solid #e0f0fa', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <i className="fas fa-leaf"></i> Treatment Plant Efficiency Log
             </h2>
 
             {!isOnline && (
@@ -121,130 +95,118 @@ const TreatmentLogForm = () => {
                 </div>
             )}
 
-            {submitStatus.message && (
+            {statusMsg.message && (
                 <div style={{
                     padding: '15px', marginBottom: '20px', borderRadius: '6px',
-                    backgroundColor: submitStatus.type === 'success' ? '#d1fae5' :
-                                   submitStatus.type === 'error' ? '#fee2e2' : '#fff3cd',
-                    color: submitStatus.type === 'success' ? '#065f46' :
-                           submitStatus.type === 'error' ? '#991b1b' : '#856404'
+                    backgroundColor: statusMsg.type === 'success' ? '#d1fae5' :
+                                   statusMsg.type === 'error' ? '#fee2e2' : '#fff3cd',
+                    color: statusMsg.type === 'success' ? '#065f46' :
+                           statusMsg.type === 'error' ? '#991b1b' : '#856404'
                 }}>
                     <i className={`fas ${
-                        submitStatus.type === 'success' ? 'fa-check-circle' :
-                        submitStatus.type === 'error' ? 'fa-exclamation-circle' : 'fa-info-circle'
+                        statusMsg.type === 'success' ? 'fa-check-circle' :
+                        statusMsg.type === 'error' ? 'fa-exclamation-circle' : 'fa-info-circle'
                     }`} style={{ marginRight: '8px' }}></i>
-                    {submitStatus.message}
+                    {statusMsg.message}
                 </div>
             )}
 
             <Formik
                 initialValues={initialValues}
-                validationSchema={DailyPlantSchema}
+                validationSchema={TreatmentLogSchema}
                 onSubmit={handleSubmit}
             >
                 {({ isSubmitting, values }) => (
                     <Form>
-                        <div className="form-group" style={{ maxWidth: '300px', marginBottom: '30px' }}>
-                            <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600' }}>Reporting Date <span style={{ color: '#e11d48' }}>*</span></label>
-                            <Field type="date" name="date" style={{ width: '100%', padding: '12px', border: '1px solid #d1e5f1', borderRadius: '6px' }} />
-                            <ErrorMessage name="date" component="div" style={{ color: '#e11d48', fontSize: '0.85rem', marginTop: '5px' }} />
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '30px' }}>
+                            <div className="form-group">
+                                <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600' }}>Report Date <span style={{ color: '#e11d48' }}>*</span></label>
+                                <Field type="date" name="report_date" style={{ width: '100%', padding: '12px', border: '1px solid #cbd5e1', borderRadius: '6px' }} />
+                                <ErrorMessage name="report_date" component="div" style={{ color: '#e11d48', fontSize: '0.85rem', marginTop: '5px' }} />
+                            </div>
+                            <div className="form-group">
+                                <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600' }}>Shift <span style={{ color: '#e11d48' }}>*</span></label>
+                                <Field as="select" name="shift" style={{ width: '100%', padding: '12px', border: '1px solid #cbd5e1', borderRadius: '6px' }}>
+                                    <option value="Day">Day</option>
+                                    <option value="Night">Night</option>
+                                </Field>
+                                <ErrorMessage name="shift" component="div" style={{ color: '#e11d48', fontSize: '0.85rem', marginTop: '5px' }} />
+                            </div>
                         </div>
 
-                        <div style={{ background: '#f9fbfd', padding: '20px', borderRadius: '8px', border: '1px solid #eef5fb', marginBottom: '30px' }}>
-                            <h3 style={{ margin: '0 0 15px', color: '#1a6fb0', fontSize: '1.1rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                <i className="fas fa-water"></i> F203C: Flow Measurement
+                        <div style={{ background: '#f0f9ff', padding: '20px', borderRadius: '8px', border: '1px solid #bfdbfe', marginBottom: '30px' }}>
+                            <h3 style={{ margin: '0 0 20px', color: '#0369a1', fontSize: '1.1rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <i className="fas fa-chart-line"></i> Treatment Plant Parameters
                             </h3>
 
                             <div className="scrollable-table">
                                 <table style={{ width: '100%', borderCollapse: 'collapse', background: 'white' }}>
                                     <thead>
                                         <tr>
-                                            <th style={{ background: '#1a6fb0', color: 'white', padding: '10px', textAlign: 'left' }}>Time</th>
-                                            <th style={{ background: '#1a6fb0', color: 'white', padding: '10px', textAlign: 'center' }}>Meter 1 (m³)</th>
-                                            <th style={{ background: '#1a6fb0', color: 'white', padding: '10px', textAlign: 'center' }}>Meter 2 (m³)</th>
+                                            <th style={{ background: '#0369a1', color: 'white', padding: '12px', textAlign: 'left', fontWeight: '600' }}>Parameter</th>
+                                            <th style={{ background: '#0369a1', color: 'white', padding: '12px', textAlign: 'center', fontWeight: '600' }}>Influent (mg/l)</th>
+                                            <th style={{ background: '#0369a1', color: 'white', padding: '12px', textAlign: 'center', fontWeight: '600' }}>Effluent (mg/l)</th>
+                                            <th style={{ background: '#0369a1', color: 'white', padding: '12px', textAlign: 'center', fontWeight: '600' }}>Efficiency (%)</th>
                                         </tr>
                                     </thead>
-                                    <FieldArray name="readings">
+                                    <FieldArray name="parameters">
                                         {() => (
                                             <tbody>
-                                                {values.readings.map((reading, index) => (
-                                                    <tr key={index} style={{ borderBottom: '1px solid #eef5fb' }}>
-                                                        <td style={{ padding: '12px', fontWeight: '600', color: '#2c3e50' }}>{reading.label}</td>
-                                                        <td style={{ padding: '8px', textAlign: 'center' }}>
-                                                            <Field
-                                                                type="number"
-                                                                step="0.01"
-                                                                name={`readings.${index}.meter_1`}
-                                                                placeholder="0.00"
-                                                                style={{ width: '120px', padding: '8px', border: '1px solid #d1e5f1', borderRadius: '4px', textAlign: 'center' }}
-                                                            />
-                                                        </td>
-                                                        <td style={{ padding: '8px', textAlign: 'center' }}>
-                                                            <Field
-                                                                type="number"
-                                                                step="0.01"
-                                                                name={`readings.${index}.meter_2`}
-                                                                placeholder="0.00"
-                                                                style={{ width: '120px', padding: '8px', border: '1px solid #d1e5f1', borderRadius: '4px', textAlign: 'center' }}
-                                                            />
-                                                        </td>
-                                                    </tr>
-                                                ))}
+                                                {values.parameters.map((param, index) => {
+                                                    const inf = parseFloat(values.parameters[index].influent_value);
+                                                    const eff = parseFloat(values.parameters[index].effluent_value);
+                                                    let liveEff = "—";
+                                                    let effColor = "#64748b";
+                                                    
+                                                    if (inf && eff && !isNaN(inf) && !isNaN(eff) && inf > 0) {
+                                                        const calc = ((inf - eff) / inf) * 100;
+                                                        liveEff = `${calc.toFixed(2)}%`;
+                                                        effColor = calc > 80 ? '#16a34a' : (calc > 60 ? '#ca8a04' : '#dc2626');
+                                                    }
+
+                                                    return (
+                                                        <tr key={index} style={{ borderBottom: '1px solid #e0e7ff' }}>
+                                                            <td style={{ padding: '12px', fontWeight: '600', color: '#1e293b' }}>{param.parameter}</td>
+                                                            <td style={{ padding: '8px', textAlign: 'center' }}>
+                                                                <Field
+                                                                    type="number"
+                                                                    step="0.1"
+                                                                    name={`parameters.${index}.influent_value`}
+                                                                    placeholder="0.0"
+                                                                    style={{ width: '110px', padding: '8px', border: '1px solid #cbd5e1', borderRadius: '4px', textAlign: 'center' }}
+                                                                />
+                                                            </td>
+                                                            <td style={{ padding: '8px', textAlign: 'center' }}>
+                                                                <Field
+                                                                    type="number"
+                                                                    step="0.1"
+                                                                    name={`parameters.${index}.effluent_value`}
+                                                                    placeholder="0.0"
+                                                                    style={{ width: '110px', padding: '8px', border: '1px solid #cbd5e1', borderRadius: '4px', textAlign: 'center' }}
+                                                                />
+                                                            </td>
+                                                            <td style={{ padding: '12px', textAlign: 'center', fontWeight: '600', color: effColor, fontSize: '0.95rem' }}>
+                                                                {liveEff}
+                                                            </td>
+                                                        </tr>
+                                                    );
+                                                })}
                                             </tbody>
                                         )}
                                     </FieldArray>
                                 </table>
                             </div>
 
-                            <div className="form-group" style={{ marginTop: '15px', marginBottom: 0 }}>
-                                <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', fontSize: '0.9rem' }}>Flow Remarks</label>
-                                <Field type="text" name="remarks" placeholder="Any flow meter issues?" style={{ width: '100%', padding: '10px', border: '1px solid #d1e5f1', borderRadius: '6px' }} />
+                            <div style={{ marginTop: '15px', padding: '12px', background: '#dbeafe', borderRadius: '6px', fontSize: '0.9rem', color: '#0c4a6e' }}>
+                                <i className="fas fa-info-circle" style={{ marginRight: '8px' }}></i>
+                                <strong>Compliance Status:</strong> Green (≥80% efficient), Yellow (60-79%), Red (&lt;60%)
                             </div>
                         </div>
 
-                        <div style={{ background: '#f9fbfd', padding: '20px', borderRadius: '8px', border: '1px solid #eef5fb', marginBottom: '30px' }}>
-                            <h3 style={{ margin: '0 0 15px', color: '#1a6fb0', fontSize: '1.1rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                <i className="fas fa-trash-alt"></i> F203A: Screens & Grit Removal
-                            </h3>
-
-                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '20px', marginBottom: '20px' }}>
-                                <div>
-                                    <h4 style={{ fontSize: '0.9rem', color: '#7f8c8d', marginBottom: '10px' }}>Screen Raking</h4>
-                                    <label style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px', cursor: 'pointer' }}>
-                                        <Field type="checkbox" name="raking_t1" style={{ width: '18px', height: '18px' }} /> T1 Complete
-                                    </label>
-                                    <label style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px', cursor: 'pointer' }}>
-                                        <Field type="checkbox" name="raking_t2" style={{ width: '18px', height: '18px' }} /> T2 Complete
-                                    </label>
-                                    <label style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px', cursor: 'pointer' }}>
-                                        <Field type="checkbox" name="raking_t3" style={{ width: '18px', height: '18px' }} /> T3 Complete
-                                    </label>
-                                </div>
-
-                                <div>
-                                    <h4 style={{ fontSize: '0.9rem', color: '#7f8c8d', marginBottom: '10px' }}>Waste Management</h4>
-                                    <label style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px', cursor: 'pointer' }}>
-                                        <Field type="checkbox" name="screenings_burial" style={{ width: '18px', height: '18px' }} /> Screenings Buried
-                                    </label>
-                                    <label style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px', cursor: 'pointer' }}>
-                                        <Field type="checkbox" name="grit_scooping" style={{ width: '18px', height: '18px' }} /> Grit Scooped
-                                    </label>
-                                    <label style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px', cursor: 'pointer' }}>
-                                        <Field type="checkbox" name="grit_burial" style={{ width: '18px', height: '18px' }} /> Grit Buried
-                                    </label>
-                                </div>
-                            </div>
-
-                            <div className="form-group" style={{ marginBottom: 0 }}>
-                                <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', fontSize: '0.9rem' }}>Screening Abnormalities / Reasons for missed tasks</label>
-                                <Field as="textarea" name="abnormalities" placeholder="e.g. Heavy rains caused overflow, skipping T3." style={{ width: '100%', padding: '10px', border: '1px solid #d1e5f1', borderRadius: '6px', minHeight: '60px' }} />
-                            </div>
-                        </div>
-
-                        <div className="signature-area" style={{ display: 'flex', gap: '20px', paddingTop: '10px', borderTop: '1px dashed #d1e5f1', marginBottom: '25px' }}>
+                        <div className="signature-area" style={{ display: 'flex', gap: '20px', paddingTop: '10px', borderTop: '1px dashed #cbd5e1', marginBottom: '25px' }}>
                             <div className="signature-box" style={{ flex: 1 }}>
-                                <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600' }}>Attendant / Operator</label>
-                                <input type="text" disabled value={user?.full_name || 'Current User'} style={{ width: '100%', padding: '12px', background: '#e5e7eb', border: '1px solid #d1e5f1', borderRadius: '6px' }} />
+                                <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600' }}>Lab Technician / Operator</label>
+                                <input type="text" disabled value={user?.full_name || 'Current User'} style={{ width: '100%', padding: '12px', background: '#f3f4f6', border: '1px solid #cbd5e1', borderRadius: '6px' }} />
                             </div>
                         </div>
 
@@ -252,7 +214,7 @@ const TreatmentLogForm = () => {
                             type="submit" 
                             disabled={isSubmitting}
                             style={{ 
-                                background: isOnline ? '#1a6fb0' : '#6c757d', 
+                                background: isOnline ? '#0369a1' : '#6c757d', 
                                 color: 'white', border: 'none', padding: '12px 25px', 
                                 borderRadius: '6px', cursor: isSubmitting ? 'not-allowed' : 'pointer', 
                                 fontSize: '15px', fontWeight: '600', opacity: isSubmitting ? 0.7 : 1,
@@ -260,7 +222,7 @@ const TreatmentLogForm = () => {
                             }}
                         >
                             <i className={`fas ${isOnline ? 'fa-paper-plane' : 'fa-save'}`} style={{ marginRight: '8px' }}></i> 
-                            {isSubmitting ? 'Submitting...' : isOnline ? 'Submit Daily Logs' : 'Save Offline'}
+                            {isSubmitting ? 'Submitting...' : isOnline ? 'Submit Treatment Log' : 'Save Offline'}
                         </button>
                     </Form>
                 )}

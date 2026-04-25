@@ -46,7 +46,7 @@ const AppRoutes = () => {
           <Route path="/treatment" element={<RoleRoute allowedRoles={['admin', 'superintendent', 'supervisor', 'lab_tech', 'operator']} element={<TreatmentLogForm />} />} />
           <Route path="/sludge" element={<RoleRoute allowedRoles={['admin', 'superintendent', 'supervisor', 'operator']} element={<SludgeManifest />} />} />
           <Route path="/connections" element={<RoleRoute allowedRoles={['admin', 'superintendent', 'supervisor']} element={<SewerConnections />} />} />
-          <Route path="/dispatch" element={<RoleRoute allowedRoles={['admin', 'superintendent', 'supervisor']} element={<DispatchDashboard />} />} />
+          <Route path="/dispatch" element={<RoleRoute allowedRoles={['admin', 'superintendent', 'supervisor', 'operator', 'attendant']} element={<DispatchDashboard />} />} />
           <Route path="/summary" element={<RoleRoute allowedRoles={['admin', 'superintendent']} element={<MonthlySummary />} />} />
         </Route>
 

@@ -302,6 +302,7 @@ class ExhausterSerializer(serializers.ModelSerializer):
     """
     licenses = LicenseSerializer(many=True, read_only=True)
     current_license = serializers.SerializerMethodField()
+    has_valid_license = serializers.SerializerMethodField()
     # BUG FIX: Removed owner_name because owner is a CharField, not a User model!
     
     class Meta:
@@ -309,7 +310,7 @@ class ExhausterSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'reg_no', 'owner', 'capacity_m3', 
             'contact', 'date_registered', 'status', 'licenses', 
-            'current_license', 'created_at', 'updated_at'
+            'current_license', 'has_valid_license', 'created_at', 'updated_at'
         ]
         read_only_fields = ['created_at', 'updated_at']
 
@@ -331,6 +332,14 @@ class ExhausterSerializer(serializers.ModelSerializer):
         if current:
             return LicenseSerializer(current).data
         return None
+
+    def get_has_valid_license(self, obj):
+        today = timezone.now().date()
+        return obj.licenses.filter(
+            start_date__lte=today,
+            end_date__gte=today,
+            status='valid'
+        ).exists()
 
 
 class ExhausterStatusSerializer(serializers.ModelSerializer):
