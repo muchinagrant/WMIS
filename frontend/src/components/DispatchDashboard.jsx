@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect, useContext, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../api/axios';
 import AuthContext from '../context/AuthContext';
@@ -14,11 +14,7 @@ const DispatchDashboard = () => {
     const userRole = user?.role || 'attendant';
     const isSupervisor = ['admin', 'superintendent', 'supervisor'].includes(userRole);
 
-    useEffect(() => {
-        fetchDashboardData();
-    }, []);
-
-    const fetchDashboardData = async () => {
+    const fetchDashboardData = useCallback(async () => {
         setLoading(true);
         try {
             const incidentRes = await api.get('/api/incidents/');
@@ -40,7 +36,11 @@ const DispatchDashboard = () => {
         } finally {
             setLoading(false);
         }
-    };
+    }, [isSupervisor, user?.user_id]);
+
+    useEffect(() => {
+        fetchDashboardData();
+    }, [fetchDashboardData]);
 
     const handleAssign = async (incidentId, userId) => {
         if (!userId) return;

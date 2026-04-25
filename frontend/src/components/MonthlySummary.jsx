@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect, useContext, useCallback } from 'react';
 import api from '../api/axios';
 import AuthContext from '../context/AuthContext';
 
@@ -13,11 +13,7 @@ const MonthlySummary = () => {
 
     const { user } = useContext(AuthContext);
 
-    useEffect(() => {
-        fetchSummaryData();
-    }, [selectedYear, selectedMonth]);
-
-    const fetchSummaryData = async () => {
+    const fetchSummaryData = useCallback(async () => {
         setLoading(true);
         setErrorMsg('');
         try {
@@ -29,7 +25,11 @@ const MonthlySummary = () => {
         } finally {
             setLoading(false);
         }
-    };
+    }, [selectedYear, selectedMonth]);
+
+    useEffect(() => {
+        fetchSummaryData();
+    }, [fetchSummaryData]);
 
     const handleExport = () => {
         window.open(`${api.defaults.baseURL}/api/monthly-summary/?year=${selectedYear}&month=${selectedMonth}&export=csv`, '_blank');

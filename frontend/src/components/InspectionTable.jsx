@@ -1,5 +1,5 @@
 import React, { useState, useContext } from 'react';
-import { Formik, Form, Field, ErrorMessage } from 'formik';
+import { Formik, Form, Field } from 'formik';
 import * as Yup from 'yup';
 import api from '../api/axios';
 import { SyncContext } from '../context/SyncContext';
@@ -21,19 +21,6 @@ const PatrolSchema = Yup.object().shape({
 const InspectionTable = () => {
     const [submitStatus, setSubmitStatus] = useState({ type: '', message: '' });
     const { isOnline, refreshQueueCount } = useContext(SyncContext);
-
-    const initialValues = {
-        date: new Date().toISOString().split('T')[0],
-        time: new Date().toTimeString().slice(0, 5),
-        drainage_area: '',
-        sewer_line_ref: '',
-        abnormality_observed: 'none',
-        abnormality_details: '',
-        new_mother_accounts: 0,
-        new_child_accounts: 0,
-        corrective_action_taken: '',
-        further_action_required: ''
-    };
 
     const handleSubmit = async (values, { setSubmitting, resetForm }) => {
         setSubmitStatus({ type: '', message: '' });
