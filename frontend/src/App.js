@@ -16,6 +16,7 @@ import SludgeManifest from './components/SludgeManifest';
 import SewerConnections from './components/SewerConnections';
 import MonthlySummary from './components/MonthlySummary';
 import DispatchDashboard from './components/DispatchDashboard';
+import Profile from './components/Profile';
 
 const RoleRoute = ({ element, allowedRoles }) => {
   const { user } = useContext(AuthContext);
@@ -48,6 +49,7 @@ const AppRoutes = () => {
           <Route path="/connections" element={<RoleRoute allowedRoles={['admin', 'superintendent', 'supervisor']} element={<SewerConnections />} />} />
           <Route path="/dispatch" element={<RoleRoute allowedRoles={['admin', 'superintendent', 'supervisor', 'operator', 'attendant']} element={<DispatchDashboard />} />} />
           <Route path="/summary" element={<RoleRoute allowedRoles={['admin', 'superintendent']} element={<MonthlySummary />} />} />
+          <Route path="/profile" element={<RoleRoute allowedRoles={['admin', 'superintendent', 'supervisor', 'lab_tech', 'operator', 'attendant']} element={<Profile />} />} />
         </Route>
 
         <Route path="*" element={<Navigate to="/incidence" replace />} />

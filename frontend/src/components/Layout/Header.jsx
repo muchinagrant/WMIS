@@ -10,8 +10,8 @@ const Header = () => {
         <>
             <header className="kicowasco-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '15px' }}>
                 <div style={{ textAlign: 'left' }}>
-                    <h1 style={{ fontSize: '1.5rem', margin: 0 }}>Kirinyaga County Water & Sanitation PLC</h1>
-                    <p className="subtitle" style={{ margin: 0, opacity: 0.9 }}>Integrated Wastewater Management System</p>
+                    <h1 style={{ fontSize: '1.5rem', margin: 0, color: '#ffffff' }}>Kirinyaga County Water & Sanitation PLC</h1>
+                    <p className="subtitle" style={{ margin: 0, opacity: 0.9, color: '#e0f2fe' }}>Integrated Wastewater Management System</p>
                 </div>
 
                 {/* Profile & Logout Section - Only renders if user is logged in */}
@@ -55,12 +55,6 @@ const Header = () => {
                     </div>
                 )}
             </header>
-            
-            <div className="official-branding">
-                <h3>KIRINYAGA COUNTY WATER & SANITATION PLC</h3>
-                <p>P.O BOX 360-10300, KERUGOYA | Tel: 0746555368 | Customer Care: 0715413591</p>
-                <p>Email: managingdirector@kicowasco.co.ke | Website: www.kicowasco.co.ke</p>
-            </div>
         </>
     );
 };

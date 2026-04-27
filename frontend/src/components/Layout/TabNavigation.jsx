@@ -8,6 +8,7 @@ const TabNavigation = () => {
     const userRole = user?.role || 'attendant';
 
     const permissions = {
+        profile: ['admin', 'superintendent', 'supervisor', 'lab_tech', 'operator', 'attendant'],
         incidence: ['admin', 'superintendent', 'supervisor', 'lab_tech', 'operator', 'attendant'],
         repairs: ['admin', 'superintendent', 'supervisor', 'operator', 'attendant'],
         inspection: ['admin', 'superintendent', 'supervisor', 'attendant'],
@@ -60,6 +61,11 @@ const TabNavigation = () => {
             {hasAccess('summary') && (
                 <NavLink to="/summary" className={({ isActive }) => isActive ? 'tab active' : 'tab'}>
                     <i className="fas fa-chart-pie"></i> Summary
+                </NavLink>
+            )}
+            {hasAccess('profile') && (
+                <NavLink to="/profile" className={({ isActive }) => isActive ? 'tab active' : 'tab'}>
+                    <i className="fas fa-id-badge"></i> Profile
                 </NavLink>
             )}
         </div>
