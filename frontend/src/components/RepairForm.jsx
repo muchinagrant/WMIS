@@ -1,6 +1,5 @@
-import React, { useRef, useState, useContext, useEffect } from 'react';
-import { useSearchParams } from 'react-router-dom';
-import { Formik, Form, Field, FieldArray } from 'formik';
+import React, { useRef, useState, useContext } from 'react';
+import { Formik, Form, Field } from 'formik';
 import * as Yup from 'yup';
 import SignatureCanvas from 'react-signature-canvas';
 import api from '../api/axios'; 
@@ -11,46 +10,20 @@ import AuthContext from '../context/AuthContext';
 const RepairSchema = Yup.object().shape({
   completion_date: Yup.date().required('Completion date is required'),
   location: Yup.string().required('Location is required'),
-  description_of_work: Yup.string().required('Description is required'),
-  materials_notes: Yup.string(),
+  repair_type: Yup.string().required('Repair type is required'),
+  scope_of_work: Yup.string().required('Scope of work is required'),
+  materials_used: Yup.string(),
 });
 
-const RepairForm = () => {
-  const [searchParams] = useSearchParams();
-  const incidentId = searchParams.get('incident'); // Grab ID from URL
-  
+const RepairForm = ({ incidentId, locationText, onSuccess }) => {
   const sigCanvas = useRef({});
   const [statusMsg, setStatusMsg] = useState({ type: '', message: '' });
   const [createdRepairId, setCreatedRepairId] = useState(null);
   const [photoFile, setPhotoFile] = useState(null);
-  const [availableMaterials, setAvailableMaterials] = useState([]);
-  const [parentLocation, setParentLocation] = useState('Fetching location...');
   
   const { isOnline, refreshQueueCount } = useContext(SyncContext);
   const { user } = useContext(AuthContext); 
   const userRole = user?.role || 'attendant';
-
-  // Fetch Parent Incident Location AND Available Materials
-  useEffect(() => {
-      const fetchSetupData = async () => {
-          if (isOnline) {
-              try {
-                  const matRes = await api.get('/api/materials/');
-                  setAvailableMaterials(matRes.data);
-                  
-                  if (incidentId) {
-                      const incRes = await api.get(`/api/incidents/${incidentId}/`);
-                      setParentLocation(incRes.data.location_text);
-                  } else {
-                      setParentLocation('Standalone Repair (No Incident Linked)');
-                  }
-              } catch (err) {
-                  console.error("Could not load setup data", err);
-              }
-          }
-      };
-      fetchSetupData();
-  }, [incidentId, isOnline]);
 
   const handleCreateRepair = async (values, { setSubmitting, resetForm }) => {
     setStatusMsg({ type: 'info', message: 'Processing repair submission...' });
@@ -67,9 +40,19 @@ const RepairForm = () => {
             photoData.append('object_id', newRepairId);
             await api.post('/api/attachments/', photoData, { headers: { 'Content-Type': 'multipart/form-data' }});
         }
-        setStatusMsg({ type: 'success', message: 'Repair logged! Waiting for supervisor certification.' });
+
+        if (incidentId) {
+          await api.post(`/api/incidents/${incidentId}/update_status/`, { status: 'pending_certification' });
+        }
+
+        setStatusMsg({ type: 'success', message: 'Work logged! Task sent to supervisor for certification.' });
         setCreatedRepairId(newRepairId); 
         setPhotoFile(null);
+        resetForm();
+
+        if (onSuccess) {
+          setTimeout(onSuccess, 1500);
+        }
       } else {
         throw new Error('Network offline');
       }
@@ -77,11 +60,20 @@ const RepairForm = () => {
       if (!navigator.onLine || error.message === 'Network offline') {
         const payload = { ...values, incident: incidentId };
         await addToQueue('/api/repairs/', payload, 'POST', { isRepair: true });
+
+        if (incidentId) {
+          await addToQueue(`/api/incidents/${incidentId}/update_status/`, { status: 'pending_certification' }, 'POST');
+        }
+
         await refreshQueueCount(); 
-        setStatusMsg({ type: 'info', message: 'Repair saved offline. Inventory will sync when connection is restored.' });
+        setStatusMsg({ type: 'info', message: 'Repair saved offline. It will sync when connection is restored.' });
         resetForm();
+
+        if (onSuccess) {
+          setTimeout(onSuccess, 2000);
+        }
       } else {
-        setStatusMsg({ type: 'error', message: error.response?.data?.inventory || 'Failed to submit repair.' });
+        setStatusMsg({ type: 'error', message: 'Failed to submit repair.' });
       }
     } finally {
       setSubmitting(false);
@@ -124,10 +116,10 @@ const RepairForm = () => {
             enableReinitialize={true}
             initialValues={{ 
                 completion_date: new Date().toISOString().split('T')[0], 
-                location: parentLocation, 
-                description_of_work: '', 
-                materials_notes: '', 
-                requisitions: [] 
+                location: locationText || 'Unknown Location', 
+              repair_type: 'other',
+              scope_of_work: '',
+              materials_used: '',
             }} 
             validationSchema={RepairSchema} 
             onSubmit={handleCreateRepair}
@@ -146,42 +138,24 @@ const RepairForm = () => {
                 </div>
 
                 <div className="form-group" style={{ marginBottom: '25px' }}>
-                  <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600' }}>Description of Repairs</label>
-                  <Field as="select" name="description_of_work" style={{ width: '100%', padding: '12px', border: '1px solid #d1e5f1', borderRadius: '6px', marginBottom: '10px' }}>
-                      <option value="">-- Select Standard Action --</option>
-                      <option value="Manual Unblocking (Rodding)">Manual Unblocking (Rodding)</option>
-                      <option value="High-Pressure Jetting">High-Pressure Jetting</option>
-                      <option value="Pipe Section Replacement">Pipe Section Replacement</option>
-                      <option value="Manhole Cover Fitting">Manhole Cover Fitting</option>
-                      <option value="Sewer Line Benching/Masonry">Sewer Line Benching/Masonry</option>
+                  <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600' }}>Repair Type</label>
+                  <Field as="select" name="repair_type" style={{ width: '100%', padding: '12px', border: '1px solid #d1e5f1', borderRadius: '6px', marginBottom: '10px' }}>
+                      <option value="other">Other</option>
+                      <option value="rodding">Rodding / Unblocking</option>
+                      <option value="jetting">High-Pressure Jetting</option>
+                      <option value="pipe_replacement">Pipe Replacement</option>
+                      <option value="manhole_repair">Manhole / Cover Repair</option>
                   </Field>
                 </div>
 
-                {/* DYNAMIC INVENTORY SELECTOR */}
-                <div style={{ marginBottom: '25px', background: '#f8fafc', padding: '15px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                    <label style={{ display: 'block', marginBottom: '15px', fontWeight: '600', color: '#0f172a' }}><i className="fas fa-boxes" style={{ color: '#1a6fb0' }}></i> Material Requisition (Store Inventory)</label>
-                    <FieldArray name="requisitions">
-                      {({ remove, push }) => (
-                        <div>
-                          {values.requisitions.map((req, index) => (
-                            <div key={index} style={{ display: 'flex', gap: '10px', marginBottom: '10px' }}>
-                              <Field as="select" name={`requisitions.${index}.material_id`} style={{ flex: 2, padding: '10px', borderRadius: '4px', border: '1px solid #cbd5e1' }}>
-                                <option value="">-- Select Material --</option>
-                                {availableMaterials.map(m => <option key={m.id} value={m.id}>{m.name} ({m.current_stock} available)</option>)}
-                              </Field>
-                              <Field type="number" step="0.1" name={`requisitions.${index}.quantity_used`} placeholder="Qty" style={{ flex: 1, padding: '10px', borderRadius: '4px', border: '1px solid #cbd5e1' }} />
-                              <button type="button" onClick={() => remove(index)} style={{ background: '#fee2e2', color: '#dc2626', border: 'none', padding: '10px', borderRadius: '4px' }}><i className="fas fa-trash"></i></button>
-                            </div>
-                          ))}
-                          <button type="button" onClick={() => push({ material_id: '', quantity_used: '' })} style={{ background: '#e0f2fe', color: '#0284c7', border: '1px dashed #0284c7', padding: '8px 15px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>+ Add Material</button>
-                        </div>
-                      )}
-                    </FieldArray>
+                <div className="form-group" style={{ marginBottom: '25px' }}>
+                  <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600' }}>Scope of Work</label>
+                  <Field as="textarea" name="scope_of_work" placeholder="Describe the exact work performed..." style={{ width: '100%', padding: '12px', border: '1px solid #d1e5f1', borderRadius: '6px', minHeight: '80px' }} />
                 </div>
 
                 <div className="form-group" style={{ marginBottom: '25px' }}>
-                  <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600' }}>Misc Materials / Extra Notes</label>
-                  <Field as="textarea" name="materials_notes" placeholder="Off-book materials or extra details..." style={{ width: '100%', padding: '12px', border: '1px solid #d1e5f1', borderRadius: '6px', minHeight: '60px' }} />
+                  <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600' }}>Materials Used</label>
+                  <Field as="textarea" name="materials_used" placeholder="Manually list materials used (e.g., 2 PVC pipes, 1 bag cement)" style={{ width: '100%', padding: '12px', border: '1px solid #d1e5f1', borderRadius: '6px', minHeight: '60px' }} />
                 </div>
 
                 <div className="form-group" style={{ marginBottom: '25px', background: '#f9fbfd', padding: '15px', borderRadius: '8px', border: '1px solid #eef5fb' }}>
@@ -190,7 +164,7 @@ const RepairForm = () => {
                 </div>
 
                 <button type="submit" disabled={isSubmitting} style={{ background: isOnline ? '#1a6fb0' : '#6c757d', color: 'white', border: 'none', padding: '12px 25px', borderRadius: '6px', cursor: 'pointer', fontSize: '15px', fontWeight: '600' }}>
-                  <i className={`fas ${isOnline ? 'fa-paper-plane' : 'fa-save'}`}></i> {isOnline ? 'Submit Repair & Deduct Inventory' : 'Save Offline'}
+                  <i className={`fas ${isOnline ? 'fa-paper-plane' : 'fa-save'}`}></i> {isOnline ? 'Submit for Certification' : 'Save Offline'}
                 </button>
               </Form>
             )}

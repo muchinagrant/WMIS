@@ -7,13 +7,11 @@ from rest_framework.response import Response
 from rest_framework_simplejwt.views import TokenObtainPairView
 from django.contrib.auth import get_user_model
 from django.utils import timezone
-from django.db import transaction  # NEW: Critical for atomic inventory deduction
 
 from core.models import (
     Incident, Repair, Inspection, TreatmentLog, Exhauster, 
     License, SludgeCollection, ConnectionReport, Attachment,
     WeeklyLinePatrol, InletWorksDailyTask, DailyFlowRecord,
-    Material, MaterialRequisition  # NEW
 )
 from core.permissions import IsSupervisor
 from .serializers import (
@@ -22,7 +20,7 @@ from .serializers import (
     SludgeCollectionSerializer, ConnectionReportSerializer,
     CustomTokenObtainPairSerializer, WeeklyLinePatrolSerializer,
     InletWorksDailyTaskSerializer, DailyFlowRecordSerializer,
-    AttachmentSerializer, UserSerializer, MaterialSerializer  # NEW
+    AttachmentSerializer, UserSerializer
 )
 
 # --- CUSTOM AUTHENTICATION VIEW ---
@@ -55,6 +53,7 @@ class IncidentViewSet(viewsets.ModelViewSet):
         """
         incident = self.get_object()
         user_id = request.data.get('user_id')
+        assisting_crew = request.data.get('assisting_crew', '')
         
         if not user_id:
             return Response({'error': 'A user_id is required to assign an incident.'}, status=status.HTTP_400_BAD_REQUEST)
@@ -64,6 +63,7 @@ class IncidentViewSet(viewsets.ModelViewSet):
             
             # UPGRADED: Advance state machine AND automate the SLA timer
             incident.assigned_to = technician
+            incident.assisting_crew = assisting_crew
             incident.status = 'assigned'
             incident.assigned_at = timezone.now()  # <-- AUTOMATED TIMESTAMP
             incident.save()
@@ -94,13 +94,17 @@ class IncidentViewSet(viewsets.ModelViewSet):
                 
                 # UPGRADED: Start the active work timer automatically
                 incident.in_progress_at = timezone.now()  # <-- AUTOMATED TIMESTAMP
+
+            elif new_status == 'pending_certification':
+                if incident.assigned_to != request.user:
+                    return Response({'error': 'Unauthorized.'}, status=status.HTTP_403_FORBIDDEN)
                 
             elif new_status in ['resolved', 'closed']:
                 return Response({
-                    'error': 'Attendants cannot directly resolve incidents. You must submit a Repair Completion Certificate for Supervisor approval.'
+                    'error': 'Attendants cannot directly resolve incidents. You must submit for certification.'
                 }, status=status.HTTP_403_FORBIDDEN)
             # Handle exception states for plumbers (e.g., waiting for parts)
-            elif new_status not in ['on_hold_materials', 'on_hold_equipment']:
+            elif new_status not in ['on_hold_materials', 'on_hold_equipment', 'pending_certification']:
                 return Response({'error': 'Invalid status transition for your role.'}, status=status.HTTP_403_FORBIDDEN)
 
         # --- RULE 2: Grade 4 Supervisors override authority ---
@@ -116,13 +120,8 @@ class RepairViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     parser_classes = (MultiPartParser, FormParser)
 
-    # UPGRADED: Wrapping creation in a transaction to protect inventory
-    @transaction.atomic
     def create(self, request, *args, **kwargs):
-        """
-        We override create to wrap it in an atomic transaction.
-        If the Serializer fails to deduct inventory, the whole request rolls back.
-        """
+        # Removed atomic inventory transaction since materials are now manually logged.
         return super().create(request, *args, **kwargs)
 
     def perform_create(self, serializer):
@@ -219,15 +218,6 @@ class DailyFlowRecordViewSet(viewsets.ModelViewSet):
     """
     queryset = DailyFlowRecord.objects.all().order_by('-date')
     serializer_class = DailyFlowRecordSerializer
-    permission_classes = [IsAuthenticated]
-
-
-# --- INVENTORY VIEWSET ---
-
-class MaterialViewSet(viewsets.ReadOnlyModelViewSet):
-    """API endpoint for fetching available inventory."""
-    queryset = Material.objects.all().order_by('name')
-    serializer_class = MaterialSerializer
     permission_classes = [IsAuthenticated]
 
 

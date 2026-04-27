@@ -5,7 +5,6 @@ from .models import (
     TreatmentLog, TreatmentParameter, Incident, User,
     Exhauster, License, SludgeCollection, ConnectionReport, ConnectionApplication,
     WeeklyLinePatrol, InletWorksDailyTask, DailyFlowRecord, FlowReading,
-    Material, MaterialRequisition  # NEW
 )
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
@@ -391,34 +390,7 @@ class SludgeCollectionSummarySerializer(serializers.Serializer):
     by_month = serializers.DictField(child=serializers.FloatField())
 
 
-# --- REPAIR SERIALIZERS ---
-
-# --- INVENTORY SERIALIZERS ---
-
-class MaterialSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Material
-        fields = ['id', 'name', 'code', 'unit_of_measure', 'current_stock', 'minimum_threshold']
-
-
-class MaterialRequisitionSerializer(serializers.ModelSerializer):
-    # write_only: React sends the material ID
-    material_id = serializers.PrimaryKeyRelatedField(
-        queryset=Material.objects.all(), source='material', write_only=True
-    )
-    # read_only: React receives the friendly names for the UI
-    material_name = serializers.CharField(source='material.name', read_only=True)
-    unit = serializers.CharField(source='material.unit_of_measure', read_only=True)
-
-    class Meta:
-        model = MaterialRequisition
-        fields = ['id', 'material_id', 'material_name', 'unit', 'quantity_used']
-
-
 class RepairSerializer(serializers.ModelSerializer):
-    # NEW: Nested serializer for materials
-    requisitions = MaterialRequisitionSerializer(many=True, required=False)
-    
     technician_name = serializers.ReadOnlyField(source='technician.get_full_name')
     supervisor_name = serializers.ReadOnlyField(source='supervisor.get_full_name')
     incident_details = serializers.SerializerMethodField()
@@ -428,7 +400,7 @@ class RepairSerializer(serializers.ModelSerializer):
         model = Repair
         fields = [
             'id', 'incident', 'incident_details', 'completion_date', 'location',
-            'description_of_work', 'materials_notes', 'requisitions', 'technician',
+            'repair_type', 'scope_of_work', 'materials_used', 'technician',
             'technician_name', 'supervisor', 'supervisor_name',
             'supervisor_signature', 'certified_at', 'created_at', 'updated_at',
             'attachments'
@@ -445,42 +417,6 @@ class RepairSerializer(serializers.ModelSerializer):
             }
         return None
 
-    def create(self, validated_data):
-        """
-        Intercepts the creation of a Repair to handle nested inventory deduction.
-        If any stock is insufficient, it raises a ValidationError, triggering 
-        the atomic transaction in views.py to roll back everything.
-        """
-        # 1. Pop the requisitions array out of the validated data
-        requisitions_data = validated_data.pop('requisitions', [])
-        
-        # 2. Create the parent Repair record
-        repair = Repair.objects.create(**validated_data)
-        
-        # 3. Loop through requested materials, deduct stock, and create bridge records
-        for req_data in requisitions_data:
-            material = req_data['material']
-            quantity = req_data['quantity_used']
-            
-            # STRICT BUSINESS LOGIC: Prevent negative inventory
-            if material.current_stock < quantity:
-                raise serializers.ValidationError({
-                    "inventory": f"Insufficient stock for {material.name}. Requested: {quantity}, Available: {material.current_stock}"
-                })
-            
-            # Deduct the stock
-            material.current_stock -= quantity
-            material.save()
-            
-            # Create the requisition record
-            MaterialRequisition.objects.create(
-                repair=repair, 
-                material=material, 
-                quantity_used=quantity
-            )
-            
-        return repair
-
 
 # --- INCIDENT SERIALIZER ---
 
@@ -494,7 +430,7 @@ class IncidentSerializer(serializers.ModelSerializer):
         model = Incident
         fields = [
             'id', 'reported_at', 'location_text', 'latitude', 'longitude', 
-            'category', 'severity', 'reported_by_name',
+            'assisting_crew', 'category', 'severity', 'reported_by_name',
             'reported_contact', 'description', 'status', 'assigned_to',
             'assigned_to_name', 'received_by', 'received_date',
             'foreman_signed_by', 'foreman_signature_image', 'created_by',

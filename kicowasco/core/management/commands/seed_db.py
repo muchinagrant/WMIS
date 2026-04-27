@@ -10,8 +10,6 @@ from core.models import (
     Exhauster,
     Incident,
     License,
-    Material,
-    MaterialRequisition,
     Repair,
     SludgeCollection,
     TreatmentLog,
@@ -51,25 +49,7 @@ class Command(BaseCommand):
 
         self.stdout.write(self.style.SUCCESS("Users verified/created (Password: kicowasco123)"))
 
-        # --- 2. CREATE WAREHOUSE INVENTORY ---
-        materials = [
-            {"name": "6-inch PVC Pipe", "code": "PVC-006", "unit": "pieces", "stock": 50},
-            {"name": "Simba Cement (50kg)", "code": "CEM-050", "unit": "bags", "stock": 100},
-            {"name": "Heavy Duty Manhole Cover", "code": "MHC-HD1", "unit": "pieces", "stock": 15},
-            {"name": "Waterproof Sealant", "code": "WPS-001", "unit": "liters", "stock": 30},
-        ]
-
-        db_materials = []
-        for m in materials:
-            mat, _ = Material.objects.get_or_create(
-                code=m["code"],
-                defaults={"name": m["name"], "unit_of_measure": m["unit"], "current_stock": m["stock"]},
-            )
-            db_materials.append(mat)
-
-        self.stdout.write(self.style.SUCCESS("Warehouse materials stocked"))
-
-        # --- 3. CREATE FLEET (EXHAUSTERS & LICENSES) ---
+        # --- 2. CREATE FLEET (EXHAUSTERS & LICENSES) ---
         now = timezone.now()
 
         ex1, _ = Exhauster.objects.get_or_create(
@@ -102,7 +82,7 @@ class Command(BaseCommand):
 
         self.stdout.write(self.style.SUCCESS("Fleet & Licenses created (including 1 expired license)"))
 
-        # --- 4. CREATE HISTORICAL OPERATIONS (F201 & F203) ---
+        # --- 3. CREATE HISTORICAL OPERATIONS (F201 & F203) ---
         # Generate some lab data to make the Grade 3 Dashboard charts look good
         for i in range(5):
             log_date = now.date() - timedelta(days=i)
@@ -150,7 +130,7 @@ class Command(BaseCommand):
 
         self.stdout.write(self.style.SUCCESS("F201 Patrols, F203 Lab Logs, and Sludge Manifests generated"))
 
-        # --- 5. CREATE INCIDENT & REPAIR WORKFLOW ---
+        # --- 4. CREATE INCIDENT & REPAIR WORKFLOW ---
         # 1. New Incident (Unassigned)
         Incident.objects.get_or_create(
             description="Severe odor near market",
@@ -164,7 +144,7 @@ class Command(BaseCommand):
             },
         )
 
-        # 2. Resolved Incident WITH a Repair and Inventory Deduction
+        # 2. Resolved Incident with a linked Repair
         inc_resolved, _ = Incident.objects.get_or_create(
             description="Burst pipe flooding the street",
             defaults={
@@ -185,7 +165,9 @@ class Command(BaseCommand):
             defaults={
                 "completion_date": (now - timedelta(days=2)).date(),
                 "location": inc_resolved.location_text,
-                "description_of_work": "Excavated and replaced pipe section",
+                "repair_type": "pipe_replacement",
+                "scope_of_work": "Excavated and replaced damaged sewer pipe section.",
+                "materials_used": "2 PVC pipes, 1 bag cement",
                 "technician": users_dict["Kevin"],
                 "supervisor": users_dict["Peter"],
                 "certified_at": now - timedelta(days=2),
@@ -193,15 +175,6 @@ class Command(BaseCommand):
         )
 
         if rep_created:
-            # Deduct items from warehouse
-            MaterialRequisition.objects.create(repair=repair, material=db_materials[0], quantity_used=2)  # 2 Pipes
-            MaterialRequisition.objects.create(repair=repair, material=db_materials[1], quantity_used=1)  # 1 Cement
+            self.stdout.write(self.style.SUCCESS("Resolved incident and completion certificate mapped"))
 
-            # Adjust master stock simulating the atomic transaction
-            db_materials[0].current_stock -= 2
-            db_materials[0].save()
-            db_materials[1].current_stock -= 1
-            db_materials[1].save()
-
-        self.stdout.write(self.style.SUCCESS("Incidents, Repairs, and Material Requisitions mapped"))
         self.stdout.write(self.style.SUCCESS("\nSEEDING COMPLETE! You can now log in with the test accounts."))

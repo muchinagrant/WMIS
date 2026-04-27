@@ -31,6 +31,7 @@ class Incident(models.Model):
         ('in_progress', 'In Progress'),
         ('on_hold_materials', 'On Hold - Awaiting Materials'),
         ('on_hold_equipment', 'On Hold - Requires Equipment/Excavator'),
+        ('pending_certification', 'Pending Certification'),
         ('resolved', 'Resolved'),
         ('closed', 'Closed'),
     ]
@@ -63,6 +64,7 @@ class Incident(models.Model):
     location_text = models.CharField(max_length=255, blank=True, help_text="Landmarks or physical description")
     latitude = models.DecimalField(max_digits=10, decimal_places=7, null=True, blank=True)
     longitude = models.DecimalField(max_digits=10, decimal_places=7, null=True, blank=True)
+    assisting_crew = models.CharField(max_length=255, blank=True, help_text="Names of other technicians assisting the lead")
 
     # Upgraded Classification
     category = models.CharField(max_length=50, choices=CATEGORY_CHOICES, default='other')
@@ -71,7 +73,7 @@ class Incident(models.Model):
     reported_by_name = models.CharField(max_length=200)
     reported_contact = models.CharField(max_length=100, blank=True)
     description = models.TextField(help_text="Additional details about the incident")
-    status = models.CharField(max_length=20, choices=INCIDENT_STATUS, default='new')
+    status = models.CharField(max_length=30, choices=INCIDENT_STATUS, default='new')
 
     # Relationships & Audit Trail
     assigned_to = models.ForeignKey(
@@ -121,6 +123,7 @@ class Incident(models.Model):
 class Repair(models.Model):
     """
     Model for repair completion certificates linked to incidents.
+    Acts as the worker's manual log of what was fixed.
     """
     incident = models.ForeignKey(
         Incident,
@@ -131,9 +134,17 @@ class Repair(models.Model):
     )
     completion_date = models.DateField()
     location = models.CharField(max_length=255)
-    description_of_work = models.TextField()
-    # UPGRADED: Changed from materials_used. Actual inventory will use MaterialRequisition.
-    materials_notes = models.TextField(blank=True, help_text="General notes on materials. Strict inventory uses MaterialRequisition.")
+
+    REPAIR_TYPES = [
+        ('rodding', 'Rodding / Unblocking'),
+        ('jetting', 'High-Pressure Jetting'),
+        ('pipe_replacement', 'Pipe Replacement'),
+        ('manhole_repair', 'Manhole / Cover Repair'),
+        ('other', 'Other')
+    ]
+    repair_type = models.CharField(max_length=50, choices=REPAIR_TYPES, default='other')
+    scope_of_work = models.TextField(help_text="Describe the exact work performed")
+    materials_used = models.TextField(blank=True, help_text="Manually list materials used (e.g., 2 PVC pipes, 1 bag cement)")
     technician = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -637,39 +648,3 @@ class FlowReading(models.Model):
     time_slot = models.CharField(max_length=10, choices=TIME_CHOICES)
     meter_1 = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     meter_2 = models.DecimalField(max_digits=10, decimal_places=2, default=0)
-
-
-# --- INVENTORY MODELS ---
-
-class Material(models.Model):
-    """
-    Master inventory list for KICOWASCO stores (e.g., pipes, cement, covers).
-    """
-    name = models.CharField(max_length=200)
-    code = models.CharField(max_length=50, unique=True, help_text="Stock keeping unit (SKU) or item code")
-    unit_of_measure = models.CharField(max_length=50, help_text="e.g., pieces, meters, kg, bags")
-    current_stock = models.DecimalField(max_digits=10, decimal_places=2, default=0)
-    minimum_threshold = models.DecimalField(max_digits=10, decimal_places=2, default=5, help_text="Alert when stock falls below this level")
-    
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        ordering = ['name']
-
-    def __str__(self):
-        return f"{self.name} ({self.current_stock} {self.unit_of_measure} available)"
-
-
-class MaterialRequisition(models.Model):
-    """
-    Bridge model tracking exactly which materials were deducted from inventory for a specific repair.
-    """
-    repair = models.ForeignKey(Repair, on_delete=models.CASCADE, related_name='requisitions')
-    # Using PROTECT so a material cannot be deleted from the database if it was used in past repairs
-    material = models.ForeignKey(Material, on_delete=models.PROTECT, related_name='requisitions')
-    quantity_used = models.DecimalField(max_digits=10, decimal_places=2)
-    requisitioned_at = models.DateTimeField(auto_now_add=True)
-
-    def __str__(self):
-        return f"{self.quantity_used}x {self.material.name} for Repair #{self.repair.id}"
