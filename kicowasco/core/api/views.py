@@ -7,11 +7,14 @@ from rest_framework.response import Response
 from rest_framework_simplejwt.views import TokenObtainPairView
 from django.contrib.auth import get_user_model
 from django.utils import timezone
+from django.db.models import Sum, Avg, Count, Q
+import calendar
 
 from core.models import (
     Incident, Repair, Inspection, TreatmentLog, Exhauster, 
     License, SludgeCollection, ConnectionReport, Attachment,
     WeeklyLinePatrol, InletWorksDailyTask, DailyFlowRecord,
+    TreatmentParameter,
 )
 from core.permissions import IsSupervisor
 from .serializers import (
@@ -264,40 +267,69 @@ class SummaryViewSet(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Mock data retained as per original implementation
-        mock_data = {
+        year = int(year)
+        month = int(month)
+        month_name = calendar.month_name[month]
+
+        # 1. Collection & Incidents Metrics
+        incidents = Incident.objects.filter(reported_at__year=year, reported_at__month=month)
+        patrols = WeeklyLinePatrol.objects.filter(date__year=year, date__month=month)
+
+        total_incidents = incidents.count()
+        resolved_incidents = incidents.filter(status__in=['resolved', 'closed']).count()
+        repairs_completed = Repair.objects.filter(completion_date__year=year, completion_date__month=month).count()
+
+        # Aggregate new connections found during F201 patrols
+        new_mother = patrols.aggregate(Sum('new_mother_accounts'))['new_mother_accounts__sum'] or 0
+        new_child = patrols.aggregate(Sum('new_child_accounts'))['new_child_accounts__sum'] or 0
+
+        # 2. Treatment Plant Metrics (F203)
+        t_logs = TreatmentLog.objects.filter(report_date__year=year, report_date__month=month)
+        t_params = TreatmentParameter.objects.filter(tlog__in=t_logs)
+
+        # Average Removal Efficiencies
+        bod_avg = t_params.filter(parameter__icontains='BOD').aggregate(Avg('removal_percent'))['removal_percent__avg'] or 0
+        tss_avg = t_params.filter(parameter__icontains='TSS').aggregate(Avg('removal_percent'))['removal_percent__avg'] or 0
+
+        # 3. Sludge Management Metrics
+        collections = SludgeCollection.objects.filter(collection_date__year=year, collection_date__month=month)
+        total_volume = collections.aggregate(Sum('volume_m3'))['volume_m3__sum'] or 0
+
+        res_vol = collections.filter(source_type='residential').aggregate(Sum('volume_m3'))['volume_m3__sum'] or 0
+        inst_vol = collections.filter(source_type='institutional').aggregate(Sum('volume_m3'))['volume_m3__sum'] or 0
+        com_vol = collections.filter(source_type='commercial').aggregate(Sum('volume_m3'))['volume_m3__sum'] or 0
+
+        # Construct the real data payload
+        real_data = {
             "collection": {
-                "inspection_incidences": 12,
-                "spillage_incidences": 3,
-                "repairs_completed": 8,
-                "new_connections": 15,
-                "total_incidents": 15,
-                "resolved_incidents": 11,
+                "total_incidents": total_incidents,
+                "resolved_incidents": resolved_incidents,
+                "repairs_completed": repairs_completed,
+                "new_connections": new_mother + new_child,
+                "spillage_incidences": incidents.filter(category='spillage').count(),
             },
             "treatment": {
-                "total_influent": 45000,
-                "total_effluent": 42000,
-                "avg_bod_removal": 85.5,
-                "avg_tss_removal": 92.3,
-                "days_with_alerts": 2,
+                "avg_bod_removal": round(bod_avg, 2),
+                "avg_tss_removal": round(tss_avg, 2),
+                "days_with_alerts": t_logs.filter(alert=True).count(),
             },
             "sludge": {
-                "total_volume_m3": 1250,
+                "total_volume_m3": float(total_volume),
                 "breakdown": {
-                    "residential": 650,
-                    "institutional": 350,
-                    "commercial": 250,
+                    "residential": float(res_vol),
+                    "institutional": float(inst_vol),
+                    "commercial": float(com_vol),
                 },
-                "collections_count": 25,
-                "active_exhausters": 8,
+                "collections_count": collections.count(),
+                "active_exhausters": Exhauster.objects.filter(status='active').count(),
             },
             "period": {
-                "year": int(year),
-                "month": int(month),
-                "month_name": "March",
+                "year": year,
+                "month": month,
+                "month_name": month_name,
             }
         }
-        return Response(mock_data)
+        return Response(real_data)
 
     def post(self, request):
         return Response({

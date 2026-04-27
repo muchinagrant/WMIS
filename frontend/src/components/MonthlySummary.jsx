@@ -99,7 +99,7 @@ const MonthlySummary = () => {
                             value={summaryData.collection.total_incidents}
                             icon="fa-exclamation-triangle"
                             color="#eab308"
-                            subtitle={`${summaryData.collection.spillage_incidences} spillages, ${summaryData.collection.inspection_incidences} blockages`}
+                            subtitle={`${summaryData.collection.spillage_incidences} sewer spillages logged`}
                         />
                         <KPICard
                             title="Repairs Certified (SLA Closed)"
@@ -134,11 +134,11 @@ const MonthlySummary = () => {
                             subtitle="Regulatory Target: > 80%"
                         />
                         <KPICard
-                            title="Total Treated Volume"
-                            value={`${summaryData.treatment.total_effluent.toLocaleString()} m3`}
-                            icon="fa-water"
-                            color="#0ea5e9"
-                            subtitle={`From ${summaryData.treatment.total_influent.toLocaleString()} m3 influent`}
+                            title="Compliance Alerts"
+                            value={summaryData.treatment.days_with_alerts}
+                            icon="fa-exclamation-circle"
+                            color={summaryData.treatment.days_with_alerts === 0 ? '#16a34a' : '#ef4444'}
+                            subtitle="Days with parameters exceeding NEMA limits"
                         />
                     </div>
 
