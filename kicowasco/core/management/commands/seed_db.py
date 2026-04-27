@@ -107,7 +107,7 @@ class Command(BaseCommand):
                 date=log_date,
                 time=now.time(),
                 drainage_area="Kerugoya Central",
-                sewer_line_ref=f"SL-{100+i}",
+                sewer_line_ref=f"SL-{100 + i}",
                 defaults={
                     "attendant": users_dict["Kevin"],
                     "abnormality_observed": "none",
