@@ -98,12 +98,16 @@ class Command(BaseCommand):
 
             # A. Daily Treatment Log (F203 Lab Data)
             is_good_day = random.random() > 0.15
-            tlog, _ = TreatmentLog.objects.get_or_create(
-                report_date=sim_date,
-                defaults={"operator": users_dict["Alice"], "shift": "Day", "alert": not is_good_day},
-            )
-            if not tlog.operator_id:
-                tlog.operator = users_dict["Alice"]
+            tlog = TreatmentLog.objects.filter(report_date=sim_date).order_by("id").first()
+            if tlog is None:
+                tlog = TreatmentLog.objects.create(
+                    report_date=sim_date,
+                    operator=users_dict["Alice"],
+                    shift="Day",
+                    alert=not is_good_day,
+                )
+            else:
+                tlog.operator = tlog.operator or users_dict["Alice"]
                 tlog.shift = tlog.shift or "Day"
                 tlog.alert = not is_good_day
                 tlog.save()
