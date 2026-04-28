@@ -28,11 +28,6 @@ const TabNavigation = () => {
                     <i className="fas fa-exclamation-circle"></i> Incidence
                 </NavLink>
             )}
-            {hasAccess('repairs') && (
-                <NavLink to="/repairs" className={({ isActive }) => isActive ? 'tab active' : 'tab'}>
-                    <i className="fas fa-tools"></i> Repairs
-                </NavLink>
-            )}
             {hasAccess('inspection') && (
                 <NavLink to="/inspection" className={({ isActive }) => isActive ? 'tab active' : 'tab'}>
                     <i className="fas fa-search"></i> Inspection
