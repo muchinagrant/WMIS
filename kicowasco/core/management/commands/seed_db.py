@@ -42,6 +42,8 @@ class Command(BaseCommand):
             user.first_name = u_data["first_name"]
             user.last_name = u_data["last_name"]
             user.role = u_data["role"]
+            # Ensure existing users are allowed to authenticate after reseeding.
+            user.is_active = True
             user.set_password("kicowasco123")
             user.save()
             users_dict[u_data["username"]] = user

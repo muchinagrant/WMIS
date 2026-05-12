@@ -132,6 +132,10 @@ AUTHENTICATION_BACKENDS = [
 # --- Axes (brute force protection) ---
 AXES_FAILURE_LIMIT = 5              # Lock after 5 failed attempts
 AXES_COOLOFF_TIME = 1               # Lockout duration in hours
+AXES_IPWARE_META_PRECEDENCE_ORDER = [
+    'HTTP_X_FORWARDED_FOR',
+    'REMOTE_ADDR',
+]
 # AXES_LOCKOUT_TEMPLATE = '403.html'  # Optional custom lockout page
 # AXES_LOCK_OUT_USING_USERNAME = True   # Optional: lock per username instead of IP
 # AXES_ONLY_USER_FAILURES = True        # Optional: track only username failures
