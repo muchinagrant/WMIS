@@ -13,6 +13,18 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
     Customizes the JWT payload to include user roles and details,
     allowing the React frontend to enforce Role-Based Access Control (RBAC).
     """
+    def validate(self, attrs):
+        username = attrs.get(self.username_field)
+        if isinstance(username, str):
+            normalized_username = username.strip()
+            if normalized_username:
+                matched_username = User.objects.filter(
+                    username__iexact=normalized_username
+                ).values_list('username', flat=True).first()
+                attrs[self.username_field] = matched_username or normalized_username
+
+        return super().validate(attrs)
+
     @classmethod
     def get_token(cls, user):
         token = super().get_token(user)
