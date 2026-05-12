@@ -18,6 +18,12 @@ class User(AbstractUser):
     def __str__(self):
         return f"{self.username} ({self.get_role_display()})"
 
+    @property
+    def full_name(self):
+        """Standardizes name access for JWT and Frontend"""
+        name = f"{self.first_name} {self.last_name}".strip()
+        return name if name else self.username
+
 # --- INCIDENT MANAGEMENT MODELS  ---
 class Incident(models.Model):
     """
