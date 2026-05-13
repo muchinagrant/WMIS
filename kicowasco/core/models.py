@@ -1,19 +1,22 @@
 from django.db import models
 from django.contrib.auth.models import AbstractUser
 from django.conf import settings
+from django.utils import timezone
 
 
 class User(AbstractUser):
     # Aligned with the Organogram Grades
     ROLE_CHOICES = [
-        ('superintendent', 'Superintendent (Grade 3)'),
-        ('supervisor', 'Supervisor (Grade 4)'),
+        ('stp_superintendent', 'STP Superintendent (Grade 3)'),
+        ('stp_supervisor', 'STP Supervisor (Grade 4)'),
         ('lab_tech', 'Lab Technologist (Grade 4)'),
-        ('operator', 'Operator (Grade 5)'),
-        ('attendant', 'Attendant/Plumber (Grade 6)'),
+        ('stp_operator', 'STP Operator (Grade 5)'),
+        ('line_supervisor', 'Line Supervisor (Grade 4)'),
+        ('sewer_line_officer', 'Sewer Line Officer'),
+        ('line_attendant', 'Line Attendant / Plumber (Grade 6)'),
         ('admin', 'System Admin'),
     ]
-    role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='attendant')
+    role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='line_attendant')
 
     def __str__(self):
         return f"{self.username} ({self.get_role_display()})"
@@ -40,6 +43,9 @@ class Incident(models.Model):
         ('pending_certification', 'Pending Certification'),
         ('resolved', 'Resolved'),
         ('closed', 'Closed'),
+        ('rejected', 'Rejected'),
+        ('duplicate', 'Duplicate'),
+        ('deferred', 'Deferred'),
     ]
 
     CATEGORY_CHOICES = [
@@ -58,8 +64,23 @@ class Incident(models.Model):
         ('low', 'Low (Routine/Minor)'),
     ]
 
+    # Unique identifier
+    incident_number = models.CharField(max_length=20, unique=True, blank=True)
+
+    # Duplicate linkage
+    duplicate_of = models.ForeignKey(
+        'self',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='duplicates'
+    )
+    rejection_reason = models.TextField(blank=True)
+
     # Core Incident Data
     reported_at = models.DateTimeField()
+    source_module = models.CharField(max_length=50, blank=True)
+    source_reference_id = models.PositiveIntegerField(null=True, blank=True)
     
     # NEW: SLA Timestamps to track Time-to-Resolution (TTR)
     assigned_at = models.DateTimeField(null=True, blank=True)
@@ -121,8 +142,24 @@ class Incident(models.Model):
     class Meta:
         ordering = ['-reported_at', '-created_at']
 
+    def save(self, *args, **kwargs):
+        if not self.incident_number:
+            year = (self.reported_at.year if self.reported_at else timezone.now().year)
+            prefix = f'INC-{year}-'
+            last = Incident.objects.filter(
+                incident_number__startswith=prefix
+            ).order_by('incident_number').last()
+            seq = 1
+            if last and last.incident_number:
+                try:
+                    seq = int(last.incident_number[len(prefix):]) + 1
+                except (ValueError, IndexError):
+                    seq = Incident.objects.filter(incident_number__startswith=prefix).count() + 1
+            self.incident_number = f'{prefix}{seq:04d}'
+        super().save(*args, **kwargs)
+
     def __str__(self):
-        return f"Incident #{self.id} - {self.get_category_display()} ({self.get_severity_display()})"
+        return f"{self.incident_number} - {self.get_category_display()} ({self.get_severity_display()})"
 
 
 # --- REPAIR MANAGEMENT MODELS ---
@@ -131,6 +168,14 @@ class Repair(models.Model):
     Model for repair completion certificates linked to incidents.
     Acts as the worker's manual log of what was fixed.
     """
+    REPAIR_STATUS = [
+        ('created', 'Created'),
+        ('started', 'Started'),
+        ('completed', 'Completed'),
+        ('certified', 'Certified'),
+        ('reopened', 'Reopened'),
+    ]
+
     incident = models.ForeignKey(
         Incident,
         on_delete=models.SET_NULL,
@@ -164,7 +209,21 @@ class Repair(models.Model):
         related_name='repairs_supervisor'
     )
     supervisor_signature = models.ImageField(upload_to='signatures/', null=True, blank=True)
+
+    # State machine
+    status = models.CharField(max_length=20, choices=REPAIR_STATUS, default='created')
+    started_at = models.DateTimeField(null=True, blank=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
     certified_at = models.DateTimeField(null=True, blank=True)
+    certified_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='repairs_certified'
+    )
+    follow_up_required = models.BooleanField(default=False)
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -324,26 +383,25 @@ class Exhauster(models.Model):
 
     def __str__(self):
         return f"{self.reg_no} - {self.owner}"
-class License(models.Model):
+class ExhausterLicense(models.Model):
     """
     Operating permits/licenses tied to exhauster vehicles.
     """
     STATUS_CHOICES = [
-        ('valid', 'Valid'),
+        ('active', 'Active'),
         ('expired', 'Expired'),
-        ('suspended', 'Suspended'),
-        ('pending', 'Pending Renewal')
+        ('revoked', 'Revoked'),
     ]
-    
+
     exhauster = models.ForeignKey(
-        Exhauster, 
-        on_delete=models.CASCADE, 
+        Exhauster,
+        on_delete=models.CASCADE,
         related_name='licenses'
     )
     license_no = models.CharField(max_length=100, blank=True)
     start_date = models.DateField()
     end_date = models.DateField()
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='valid')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='active')
     fee_paid = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -369,50 +427,54 @@ class SludgeCollection(models.Model):
     
     MANIFEST_STATUS_CHOICES = [
         ('pending', 'Pending'),
-        ('completed', 'Completed')
+        ('received', 'Received'),
+        ('rejected', 'Rejected'),
     ]
-    
+
     # Collection details
     collection_date = models.DateField()
     source_type = models.CharField(max_length=50, choices=SOURCE_CHOICES)
     source_name = models.CharField(max_length=255, blank=True, help_text="Name of establishment/residence")
     area_ward = models.CharField(max_length=200, blank=True, help_text="Location/Ward")
     toilets_present = models.BooleanField(default=False, help_text="Whether toilets were present at source")
-    
+    driver_name = models.CharField(max_length=200, blank=True, help_text="Name of the exhauster driver")
+
     # Waste details
     volume_m3 = models.DecimalField(max_digits=8, decimal_places=3, help_text="Volume collected in cubic meters")
-    users = models.PositiveIntegerField(null=True, blank=True, help_text="Number of users served")
-    last_emptied = models.DateField(null=True, blank=True, help_text="Date of last emptying (if known)")
+    number_of_users = models.PositiveIntegerField(null=True, blank=True, help_text="Number of users served")
+    last_emptying_date = models.DateField(null=True, blank=True, help_text="Date of last emptying (if known)")
     waste_description = models.TextField(blank=True, help_text="Description of waste characteristics")
-    
+
     # Chain of custody
     exhauster = models.ForeignKey(
-        Exhauster, 
-        on_delete=models.SET_NULL, 
-        null=True, 
+        Exhauster,
+        on_delete=models.SET_NULL,
+        null=True,
         blank=True,
         related_name='collections'
     )
     exhauster_driver = models.ForeignKey(
-        settings.AUTH_USER_MODEL, 
-        on_delete=models.SET_NULL, 
-        null=True, 
-        blank=True, 
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
         related_name='collections_driven'
     )
-    receiving_officer = models.ForeignKey(
-        settings.AUTH_USER_MODEL, 
-        on_delete=models.SET_NULL, 
-        null=True, 
-        blank=True, 
+    received_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
         related_name='collections_received'
     )
+    received_at = models.DateTimeField(null=True, blank=True)
     receiving_notes = models.TextField(blank=True, help_text="Notes from receiving officer")
-    
+    rejection_reason = models.TextField(blank=True)
+
     # Status and tracking
     manifest_status = models.CharField(
-        max_length=20, 
-        choices=MANIFEST_STATUS_CHOICES, 
+        max_length=20,
+        choices=MANIFEST_STATUS_CHOICES,
         default='pending'
     )
     created_at = models.DateTimeField(auto_now_add=True)
@@ -524,7 +586,6 @@ class ConnectionReport(models.Model):
 
     start_date = models.DateField()
     end_date = models.DateField(null=True, blank=True)
-    ward = models.CharField(max_length=50, choices=WARD_CHOICES)
     
     prepared_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, 
@@ -559,11 +620,18 @@ class ConnectionApplication(models.Model):
         ('completed', 'Completed'),
     ]
 
+    WARD_CHOICES = [
+        ('kerugoya', 'Kerugoya'),
+        ('kutus', 'Kutus'),
+        ('sagana', 'Sagana'),
+    ]
+
     report = models.ForeignKey(
         ConnectionReport, 
         on_delete=models.CASCADE, 
         related_name='applications'
     )
+    ward = models.CharField(max_length=50, choices=WARD_CHOICES, blank=True)
     application_date = models.DateField()
     applicant_name = models.CharField(max_length=255)
     id_no = models.CharField(max_length=100, help_text="ID or Passport Number")
@@ -579,7 +647,43 @@ class ConnectionApplication(models.Model):
 
 
 # --- NEW: F201 WEEKLY LINE PATROLS ---
+
+class SewerLineSection(models.Model):
+    code = models.CharField(max_length=50, unique=True)
+    is_confirmed = models.BooleanField(default=False)
+
+    def __str__(self):
+        return self.code
+
+
 class WeeklyLinePatrol(models.Model):
+    date = models.DateField()
+    week_number = models.PositiveSmallIntegerField(default=0)
+    drainage_area = models.CharField(max_length=200)
+    attendant = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name='patrols')
+    status = models.CharField(
+        max_length=20,
+        choices=[('submitted', 'Submitted'), ('verified', 'Verified')],
+        default='submitted'
+    )
+    verified_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='verified_patrols'
+    )
+    verified_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-date']
+
+    def __str__(self):
+        return f"Patrol {self.date} — {self.drainage_area}"
+
+
+class PatrolRow(models.Model):
     ABNORMALITY_CHOICES = [
         ('none', 'None'),
         ('erosion', 'Erosion along lines'),
@@ -589,25 +693,30 @@ class WeeklyLinePatrol(models.Model):
         ('other', 'Other (Specify in remarks)')
     ]
 
-    date = models.DateField()
+    weekly_patrol = models.ForeignKey(WeeklyLinePatrol, on_delete=models.CASCADE, related_name='rows')
     time = models.TimeField()
-    drainage_area = models.CharField(max_length=200)
-    sewer_line_ref = models.CharField(max_length=100)
-    attendant = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name='patrols')
-    
+    sewer_line_section = models.ForeignKey(SewerLineSection, on_delete=models.PROTECT, related_name='patrol_rows')
+    sewer_line_ref_text = models.CharField(max_length=100)
     abnormality_observed = models.CharField(max_length=50, choices=ABNORMALITY_CHOICES, default='none')
     abnormality_details = models.TextField(blank=True, help_text="Specify if 'Other' or add details")
-    
-    # Tracking new customer connections found during patrol
-    new_mother_accounts = models.PositiveIntegerField(default=0)
-    new_child_accounts = models.PositiveIntegerField(default=0)
-    
-    corrective_action_taken = models.TextField(blank=True)
+    new_mother_connections = models.PositiveIntegerField(default=0)
+    new_child_connections = models.PositiveIntegerField(default=0)
+    immediate_action_taken = models.TextField(blank=True)
     further_action_required = models.TextField(blank=True)
-    
-    supervisor_signature = models.ImageField(upload_to='signatures/patrols/', null=True, blank=True)
-    
+    incident_created = models.ForeignKey(
+        'Incident',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='patrol_rows'
+    )
     created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['time', 'id']
+
+    def __str__(self):
+        return f"Row {self.id} — {self.sewer_line_section.code} at {self.time}"
 
 
 # --- NEW: F203A INLET WORKS (SCREENS & GRIT) ---
@@ -619,6 +728,10 @@ class InletWorksDailyTask(models.Model):
     raking_t1 = models.BooleanField(default=False)
     raking_t2 = models.BooleanField(default=False)
     raking_t3 = models.BooleanField(default=False)
+
+    t1_grit_buried = models.BooleanField(default=False)
+    t2_screenings_buried = models.BooleanField(default=False)
+    shift_notes = models.TextField(blank=True)
     
     screenings_burial = models.BooleanField(default=False)
     grit_scooping = models.BooleanField(default=False)
@@ -627,21 +740,76 @@ class InletWorksDailyTask(models.Model):
     abnormalities = models.TextField(blank=True)
     operator_signature = models.ImageField(upload_to='signatures/inlet/', null=True, blank=True)
 
+    submitted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='submitted_inlet_tasks'
+    )
+    submitted_at = models.DateTimeField(auto_now_add=True)
+    status = models.CharField(
+        max_length=20,
+        choices=[('submitted', 'Submitted'), ('verified', 'Verified')],
+        default='submitted'
+    )
+    verified_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='verified_inlet_tasks'
+    )
+    verified_at = models.DateTimeField(null=True, blank=True)
+    incident_created = models.ForeignKey(
+        'Incident',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='f203a_tasks'
+    )
+
 
 # --- NEW: F203C INLET WORKS (FLOW MEASUREMENT) ---
 class DailyFlowRecord(models.Model):
     date = models.DateField(unique=True)
     attendants = models.ManyToManyField(settings.AUTH_USER_MODEL, related_name='flow_records')
     remarks = models.TextField(blank=True)
+    submitted_at = models.DateTimeField(auto_now_add=True)
+    status = models.CharField(
+        max_length=20,
+        choices=[('submitted', 'Submitted'), ('verified', 'Verified')],
+        default='submitted'
+    )
+    verified_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='verified_flow_records'
+    )
+    verified_at = models.DateTimeField(null=True, blank=True)
 
     @property
     def average_daily_flow(self):
-        # Calculate average of all linked readings
+        """
+        Q5 assumed: rate meters (m3/hr).
+        Formula: arithmetic mean of per-slot averages * 24 = daily volume (m3).
+        """
         readings = self.readings.all()
         if not readings:
-            return 0
-        total = sum((r.meter_1 + r.meter_2) for r in readings)
-        return total / len(readings)
+            return None
+
+        slot_avgs = []
+        for reading in readings:
+            vals = [v for v in [reading.meter_1, reading.meter_2] if v is not None]
+            if vals:
+                slot_avgs.append(sum(vals) / len(vals))
+
+        if not slot_avgs:
+            return None
+
+        return round((sum(slot_avgs) / len(slot_avgs)) * 24, 3)
 
 class FlowReading(models.Model):
     TIME_CHOICES = [
@@ -654,3 +822,244 @@ class FlowReading(models.Model):
     time_slot = models.CharField(max_length=10, choices=TIME_CHOICES)
     meter_1 = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     meter_2 = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+
+    class Meta:
+        unique_together = ('daily_record', 'time_slot')
+
+
+# --- NEW: F203B DAILY LAB RECORDS ---
+class DailyLabRecord(models.Model):
+    """
+    Daily laboratory analysis results for the treatment plant.
+    Supports partial entry — fields are nullable to allow progressive fill-in.
+    Frequency guide: D=daily, 2W=twice weekly, W=weekly, M=monthly
+    """
+    record_date = models.DateField(unique=True)
+    attendant = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='lab_records'
+    )
+
+    # Influent (Inflow) Parameters — D
+    inflow_ph = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    inflow_temperature = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    inflow_tss = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True, help_text='mg/L — D')
+    inflow_bod = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True, help_text='mg/L — 2W')
+    inflow_cod = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True, help_text='mg/L — W')
+    inflow_tn = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True, help_text='Total Nitrogen mg/L — M')
+    inflow_tp = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True, help_text='Total Phosphorus mg/L — M')
+    inflow_fc = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True, help_text='Fecal Coliforms CFU/100mL — W')
+
+    # Effluent (Outflow) Parameters — same frequencies as inflow
+    effluent_ph = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    effluent_temperature = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    effluent_tss = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True, help_text='mg/L — D')
+    effluent_bod = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True, help_text='mg/L — 2W')
+    effluent_cod = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True, help_text='mg/L — W')
+    effluent_tn = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True, help_text='Total Nitrogen mg/L — M')
+    effluent_tp = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True, help_text='Total Phosphorus mg/L — M')
+    effluent_fc = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True, help_text='Fecal Coliforms CFU/100mL — W')
+    effluent_turbidity = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True, help_text='NTU — D')
+    effluent_chlorine = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True, help_text='mg/L — D')
+    effluent_do = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True, help_text='Dissolved Oxygen mg/L — D')
+
+    # Volume / Operations
+    volume_treated_m3 = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True)
+    sludge_volume_m3 = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True)
+
+    # Notes
+    remarks = models.TextField(blank=True)
+
+    # Verification
+    status = models.CharField(
+        max_length=20,
+        choices=[('submitted', 'Submitted'), ('verified', 'Verified')],
+        default='submitted'
+    )
+    verified_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='verified_lab_records'
+    )
+    verified_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-record_date']
+        indexes = [
+            models.Index(fields=['record_date']),
+            models.Index(fields=['status']),
+        ]
+
+    @property
+    def bod_removal_efficiency(self):
+        if self.inflow_bod and self.effluent_bod and self.inflow_bod > 0:
+            return round(float((self.inflow_bod - self.effluent_bod) / self.inflow_bod * 100), 1)
+        return None
+
+    @property
+    def tss_removal_efficiency(self):
+        if self.inflow_tss and self.effluent_tss and self.inflow_tss > 0:
+            return round(float((self.inflow_tss - self.effluent_tss) / self.inflow_tss * 100), 1)
+        return None
+
+    @property
+    def is_bod_exceedance(self):
+        if self.effluent_bod is not None:
+            from django.conf import settings as _s
+            return float(self.effluent_bod) > _s.NEMA_BOD_DISCHARGE_LIMIT_MG_L
+        return None
+
+    @property
+    def is_tss_exceedance(self):
+        if self.effluent_tss is not None:
+            from django.conf import settings as _s
+            return float(self.effluent_tss) > _s.NEMA_TSS_DISCHARGE_LIMIT_MG_L
+        return None
+
+    def __str__(self):
+        return f"Lab Record {self.record_date}"
+
+
+# --- MONTHLY SUMMARY SNAPSHOT LOCK ---
+class MonthlySummarySnapshot(models.Model):
+    """
+    Once locked by the STP Superintendent, the summary is frozen.
+    The SummaryViewSet serves snapshot_data instead of live aggregation.
+    """
+    year = models.PositiveSmallIntegerField()
+    month = models.PositiveSmallIntegerField()
+    is_locked = models.BooleanField(default=False)
+    locked_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='locked_snapshots'
+    )
+    locked_at = models.DateTimeField(null=True, blank=True)
+    snapshot_data = models.JSONField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ('year', 'month')
+        ordering = ['-year', '-month']
+
+    def __str__(self):
+        return f"Snapshot {self.year}-{str(self.month).zfill(2)} ({'LOCKED' if self.is_locked else 'open'})"
+
+
+# --- ANAEROBIC POND OPERATIONS ---
+
+class TreatmentPond(models.Model):
+    """Lookup table for anaerobic ponds at the STP site."""
+    code = models.CharField(max_length=20, unique=True)
+    name = models.CharField(max_length=100)
+    capacity_m3 = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ['code']
+
+    def __str__(self):
+        return f"{self.code} — {self.name}"
+
+
+class PondDailyLog(models.Model):
+    """
+    Daily operational log per pond with 3-level sign-off:
+      submitted → cosigned_op → verified
+    """
+    POND_LOG_STATUS = [
+        ('submitted', 'Submitted'),
+        ('cosigned_op', 'Co-signed by Operator'),
+        ('verified', 'Verified by Supervisor'),
+    ]
+
+    pond = models.ForeignKey(TreatmentPond, on_delete=models.PROTECT, related_name='daily_logs')
+    log_date = models.DateField()
+    submitted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='pond_logs_submitted'
+    )
+
+    # Observations
+    ph = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    temperature = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    do_level = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True, help_text='Dissolved Oxygen mg/L')
+    surface_scum = models.BooleanField(default=False)
+    odour_complaint = models.BooleanField(default=False)
+    colour = models.CharField(max_length=50, blank=True)
+    remarks = models.TextField(blank=True)
+
+    # Sign-off chain
+    status = models.CharField(max_length=20, choices=POND_LOG_STATUS, default='submitted')
+
+    cosigned_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='pond_logs_cosigned'
+    )
+    cosigned_at = models.DateTimeField(null=True, blank=True)
+
+    verified_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='pond_logs_verified'
+    )
+    verified_at = models.DateTimeField(null=True, blank=True)
+
+    # Escalation bridge
+    incident_created = models.ForeignKey(
+        'Incident', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='pond_logs'
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-log_date', 'pond__code']
+        unique_together = ('pond', 'log_date')
+        indexes = [
+            models.Index(fields=['log_date']),
+            models.Index(fields=['status']),
+        ]
+
+    def __str__(self):
+        return f"Pond Log {self.pond.code} — {self.log_date}"
+
+
+class PondYearlyTask(models.Model):
+    """Annual maintenance tasks associated with a pond."""
+    TASK_STATUS = [
+        ('pending', 'Pending'),
+        ('in_progress', 'In Progress'),
+        ('completed', 'Completed'),
+        ('deferred', 'Deferred'),
+    ]
+
+    pond = models.ForeignKey(TreatmentPond, on_delete=models.PROTECT, related_name='yearly_tasks')
+    year = models.PositiveSmallIntegerField()
+    task_name = models.CharField(max_length=200)
+    description = models.TextField(blank=True)
+    due_date = models.DateField(null=True, blank=True)
+    status = models.CharField(max_length=20, choices=TASK_STATUS, default='pending')
+    assigned_to = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='pond_yearly_tasks'
+    )
+    completed_at = models.DateTimeField(null=True, blank=True)
+    notes = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['year', 'pond__code', 'due_date']
+
+    def __str__(self):
+        return f"{self.pond.code} — {self.task_name} ({self.year})"

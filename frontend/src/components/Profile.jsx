@@ -11,7 +11,7 @@ const Profile = () => {
     });
     const [loading, setLoading] = useState(true);
 
-    const isSupervisor = ['admin', 'superintendent', 'supervisor'].includes(user?.role);
+    const isSupervisor = ['admin', 'stp_superintendent', 'stp_supervisor', 'line_supervisor'].includes(user?.role);
 
     useEffect(() => {
         const fetchUserStats = async () => {
@@ -48,11 +48,13 @@ const Profile = () => {
     const formatRole = (roleStr) => {
         if (!roleStr) return 'Staff';
         const roles = {
-            superintendent: 'Superintendent (Grade 3)',
-            supervisor: 'Supervisor (Grade 4)',
+            stp_superintendent: 'STP Superintendent (Grade 3)',
+            stp_supervisor: 'STP Supervisor (Grade 4)',
             lab_tech: 'Lab Technologist (Grade 4)',
-            operator: 'Operator (Grade 5)',
-            attendant: 'Attendant / Plumber (Grade 6)',
+            stp_operator: 'STP Operator (Grade 5)',
+            line_supervisor: 'Line Supervisor (Grade 4)',
+            sewer_line_officer: 'Sewer Line Officer',
+            line_attendant: 'Line Attendant / Plumber (Grade 6)',
             admin: 'System Administrator'
         };
         return roles[roleStr] || roleStr.replace('_', ' ').toUpperCase();

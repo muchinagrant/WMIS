@@ -179,11 +179,23 @@ CSRF_TRUSTED_ORIGINS = [
 ]
 
 # Simple JWT Configuration
+JWT_SIGNING_KEY = os.environ.get('JWT_SIGNING_KEY', SECRET_KEY)
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
     'AUTH_HEADER_TYPES': ('Bearer',),
+    'SIGNING_KEY': JWT_SIGNING_KEY,
 }
+
+# --- WMIS Operational Constants ---
+NEMA_BOD_DISCHARGE_LIMIT_MG_L = 30.0          # ⚠️ Confirm against KICOWASCO licence before go-live
+NEMA_TSS_DISCHARGE_LIMIT_MG_L = 30.0          # ⚠️ Confirm against KICOWASCO licence before go-live
+NEMA_TURBIDITY_LIMIT_NTU = 5.0                # ⚠️ Confirm against KICOWASCO licence before go-live
+VERIFICATION_OVERDUE_WARNING_HOURS = 24
+VERIFICATION_OVERDUE_CRITICAL_HOURS = 48
+INCIDENT_NUMBER_PREFIX = 'INC'
+INCIDENT_NUMBER_YEAR_FORMAT = '%Y'
+INCIDENT_NUMBER_PADDING = 4
 
 # Internationalization
 LANGUAGE_CODE = 'en-us'

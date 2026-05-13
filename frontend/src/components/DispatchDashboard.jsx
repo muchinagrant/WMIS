@@ -10,10 +10,12 @@ const DispatchDashboard = () => {
     const [loading, setLoading] = useState(true);
     const [actionStatus, setActionStatus] = useState({ type: '', message: '' });
     const [expandedIncidentId, setExpandedIncidentId] = useState(null);
+    const [pondAlerts, setPondAlerts] = useState([]);
     
     const { user } = useContext(AuthContext);
-    const userRole = user?.role || 'attendant';
-    const isSupervisor = ['admin', 'superintendent', 'supervisor'].includes(userRole);
+    const userRole = user?.role || 'line_attendant';
+    const canDispatchActions = ['admin', 'stp_superintendent', 'line_supervisor'].includes(userRole);
+    const isSupervisorView = canDispatchActions || userRole === 'sewer_line_officer';
 
     const fetchDashboardData = useCallback(async () => {
         setLoading(true);
@@ -28,16 +30,18 @@ const DispatchDashboard = () => {
             }
             
             // Filter view based on role
-            if (isSupervisor) {
+            if (isSupervisorView) {
                 setIncidents(incidentsArray);
-                const userRes = await api.get('/api/users/');
+                if (canDispatchActions) {
+                    const userRes = await api.get('/api/users/');
 
-                // Safely support both DRF paginated responses and flat arrays.
-                const usersArray = userRes.data.results || userRes.data;
+                    // Safely support both DRF paginated responses and flat arrays.
+                    const usersArray = userRes.data.results || userRes.data;
 
-                if (Array.isArray(usersArray)) {
-                    const fieldStaff = usersArray.filter(u => u.role === 'attendant' || u.role === 'operator');
-                    setTechnicians(fieldStaff);
+                    if (Array.isArray(usersArray)) {
+                        const fieldStaff = usersArray.filter(u => u.role === 'line_attendant');
+                        setTechnicians(fieldStaff);
+                    }
                 }
             } else {
                 // Technicians only see their own assigned incidents
@@ -50,11 +54,23 @@ const DispatchDashboard = () => {
         } finally {
             setLoading(false);
         }
-    }, [isSupervisor, user?.user_id]);
+    }, [canDispatchActions, isSupervisorView, user?.user_id]);
 
     useEffect(() => {
         fetchDashboardData();
     }, [fetchDashboardData]);
+
+    useEffect(() => {
+        if (!isSupervisorView) return;
+        const today = new Date().toISOString().split('T')[0];
+        api.get('/api/pond-logs/', { params: { year: today.slice(0,4), month: parseInt(today.slice(5,7), 10) } })
+            .then(res => {
+                const todayLogs = (res.data || []).filter(l => l.log_date === today);
+                const alerts = todayLogs.filter(l => l.surface_scum || l.odour_complaint || (l.do_level !== null && Number(l.do_level) < 0.5));
+                setPondAlerts(alerts);
+            })
+            .catch(() => {});
+    }, [isSupervisorView]);
 
     const handleAssign = async (incidentId) => {
         const userId = document.getElementById(`assign-user-${incidentId}`).value;
@@ -114,7 +130,14 @@ const DispatchDashboard = () => {
     return (
         <div className="form-section active">
             <h2 style={{ color: '#1a6fb0', marginBottom: '25px', paddingBottom: '15px', borderBottom: '2px solid #e0f0fa', display: 'flex', alignItems: 'center', gap: '10px', justifyContent: 'space-between' }}>
-                <span><i className="fas fa-tasks"></i> {isSupervisor ? 'Supervisor Dispatch Board' : 'My Assigned Tasks'}</span>
+                <span>
+                    <i className="fas fa-tasks"></i>
+                    {canDispatchActions
+                        ? 'Supervisor Dispatch Board'
+                        : userRole === 'sewer_line_officer'
+                            ? 'Dispatch Board (Read-Only)'
+                            : 'My Assigned Tasks'}
+                </span>
                 <button onClick={fetchDashboardData} style={{ background: 'none', border: '1px solid #1a6fb0', color: '#1a6fb0', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '0.9rem' }}>
                     <i className="fas fa-sync-alt"></i> Refresh
                 </button>
@@ -123,6 +146,31 @@ const DispatchDashboard = () => {
             {actionStatus.message && (
                 <div style={{ padding: '15px', marginBottom: '20px', borderRadius: '6px', backgroundColor: actionStatus.type === 'success' ? '#d1fae5' : '#fee2e2', color: actionStatus.type === 'success' ? '#065f46' : '#991b1b' }}>
                     {actionStatus.message}
+                </div>
+            )}
+
+            {isSupervisorView && pondAlerts.length > 0 && (
+                <div style={{ background: '#fef3c7', border: '1px solid #f59e0b', borderRadius: '8px', padding: '12px 16px', marginBottom: '20px' }}>
+                    <div style={{ fontWeight: 700, color: '#92400e', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <i className="fas fa-water" style={{ color: '#d97706' }}></i>
+                        Pond Alerts Today ({pondAlerts.length})
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                        {pondAlerts.map(log => (
+                            <span key={log.id} style={{ background: '#fee2e2', color: '#991b1b', padding: '4px 10px', borderRadius: 6, fontSize: '0.8rem', fontWeight: 600 }}>
+                                <i className="fas fa-exclamation-triangle" style={{ marginRight: 4 }}></i>
+                                {log.pond_code}
+                                {log.surface_scum && ' · Scum'}
+                                {log.odour_complaint && ' · Odour'}
+                                {log.do_level !== null && Number(log.do_level) < 0.5 && ` · DO ${log.do_level}`}
+                                {log.incident_number && (
+                                    <span style={{ marginLeft: 6, opacity: 0.7, fontWeight: 400 }}>
+                                        ({log.incident_number})
+                                    </span>
+                                )}
+                            </span>
+                        ))}
+                    </div>
                 </div>
             )}
 
@@ -162,7 +210,7 @@ const DispatchDashboard = () => {
                                         </td>
                                         <td style={{ padding: '15px' }}>
                                             {/* SUPERVISOR VIEW: Assign Dropdown */}
-                                            {isSupervisor && inc.status === 'new' && (
+                                            {canDispatchActions && inc.status === 'new' && (
                                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', minWidth: '200px' }}>
                                                     <select id={`assign-user-${inc.id}`} style={{ padding: '6px', borderRadius: '4px', border: '1px solid #cbd5e1' }}>
                                                         <option value="">Select Lead Plumber...</option>
@@ -185,7 +233,7 @@ const DispatchDashboard = () => {
                                             )}
 
                                             {/* SUPERVISOR VIEW: Review & Certify Button */}
-                                            {isSupervisor && inc.status === 'pending_certification' && (
+                                            {canDispatchActions && inc.status === 'pending_certification' && (
                                                 <button
                                                     onClick={() => toggleExpand(inc.id)}
                                                     style={{ background: '#0ea5e9', color: 'white', border: 'none', padding: '8px 15px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', width: '100%', marginTop: '5px' }}
@@ -195,7 +243,7 @@ const DispatchDashboard = () => {
                                             )}
 
                                             {/* TECHNICIAN VIEW: State Machine Buttons */}
-                                            {!isSupervisor && inc.status === 'assigned' && (
+                                            {!isSupervisorView && inc.status === 'assigned' && (
                                                 <button
                                                     onClick={() => handleStartWork(inc.id)}
                                                     style={{ background: '#1a6fb0', color: 'white', border: 'none', padding: '8px 15px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', width: '100%' }}
@@ -203,7 +251,7 @@ const DispatchDashboard = () => {
                                                     <i className="fas fa-play-circle"></i> Start Work
                                                 </button>
                                             )}
-                                            {!isSupervisor && inc.status === 'in_progress' && (
+                                            {!isSupervisorView && inc.status === 'in_progress' && (
                                                 <button
                                                     onClick={() => toggleExpand(inc.id)}
                                                     style={{ background: '#16a34a', color: 'white', border: 'none', padding: '8px 15px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', width: '100%' }}
@@ -222,7 +270,7 @@ const DispatchDashboard = () => {
                                         <tr style={{ background: '#f8fafc', borderBottom: '2px solid #cbd5e1' }}>
                                             <td colSpan="5" style={{ padding: '20px' }}>
                                                 <div style={{ background: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }}>
-                                                    {isSupervisor ? (
+                                                    {canDispatchActions ? (
                                                         <RepairReview
                                                             incidentId={inc.id}
                                                             onSuccess={() => {

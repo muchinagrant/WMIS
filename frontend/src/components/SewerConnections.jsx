@@ -4,6 +4,7 @@ import * as Yup from 'yup';
 import api from '../api/axios';
 import { SyncContext } from '../context/SyncContext'; // 2. Import SyncContext
 import { addToQueue } from '../api/offlineQueue';     // 3. Import queue utility
+import AuthContext from '../context/AuthContext';
 
 // 1. Validation Schema
 const ConnectionsSchema = Yup.object().shape({
@@ -28,6 +29,8 @@ const SewerConnections = () => {
     
     // 4. Extract offline states from context
     const { isOnline, refreshQueueCount } = useContext(SyncContext);
+    const { user } = useContext(AuthContext);
+    const isReadOnly = user?.role === 'sewer_line_officer';
 
     // 2. Initial Values
     const initialValues = {
@@ -161,6 +164,22 @@ const SewerConnections = () => {
                         submitStatus.type === 'error' ? 'fa-exclamation-circle' : 'fa-info-circle'
                     }`} style={{ fontSize: '1.2rem' }}></i>
                     <div>{submitStatus.message}</div>
+                </div>
+            )}
+            {isReadOnly && (
+                <div style={{
+                    padding: '15px',
+                    marginBottom: '20px',
+                    borderRadius: '6px',
+                    backgroundColor: '#fff7ed',
+                    color: '#9a3412',
+                    border: '1px solid #fdba74',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '10px'
+                }}>
+                    <i className="fas fa-eye" style={{ fontSize: '1.2rem' }}></i>
+                    <div>Read-only access: sewer line officers cannot submit connection updates.</div>
                 </div>
             )}
 
@@ -328,10 +347,10 @@ const SewerConnections = () => {
                                                                         border: 'none', 
                                                                         padding: '6px 10px', 
                                                                         borderRadius: '4px', 
-                                                                        cursor: isSubmitting ? 'not-allowed' : 'pointer',
-                                                                        opacity: isSubmitting ? 0.5 : 1
+                                                                        cursor: isSubmitting || isReadOnly ? 'not-allowed' : 'pointer',
+                                                                        opacity: isSubmitting || isReadOnly ? 0.5 : 1
                                                                     }}
-                                                                    disabled={isSubmitting}
+                                                                    disabled={isSubmitting || isReadOnly}
                                                                 >
                                                                     <i className="fas fa-trash"></i>
                                                                 </button>
@@ -350,11 +369,11 @@ const SewerConnections = () => {
                                                                 border: '1px solid #1a6fb0', 
                                                                 padding: '8px 20px', 
                                                                 borderRadius: '6px', 
-                                                                cursor: isSubmitting ? 'not-allowed' : 'pointer', 
+                                                                cursor: isSubmitting || isReadOnly ? 'not-allowed' : 'pointer', 
                                                                 fontWeight: '600',
-                                                                opacity: isSubmitting ? 0.5 : 1
+                                                                opacity: isSubmitting || isReadOnly ? 0.5 : 1
                                                             }}
-                                                            disabled={isSubmitting}
+                                                            disabled={isSubmitting || isReadOnly}
                                                         >
                                                             <i className="fas fa-plus" style={{ marginRight: '5px' }}></i> Add Application
                                                         </button>
@@ -383,17 +402,17 @@ const SewerConnections = () => {
 
                         <button 
                             type="submit" 
-                            disabled={isSubmitting}
+                            disabled={isSubmitting || isReadOnly}
                             style={{ 
                                 background: isOnline ? '#1a6fb0' : '#6c757d', 
                                 color: 'white', 
                                 border: 'none', 
                                 padding: '12px 25px', 
                                 borderRadius: '6px', 
-                                cursor: isSubmitting ? 'not-allowed' : 'pointer', 
+                                cursor: isSubmitting || isReadOnly ? 'not-allowed' : 'pointer', 
                                 fontSize: '15px', 
                                 fontWeight: '600', 
-                                opacity: isSubmitting ? 0.7 : 1,
+                                opacity: isSubmitting || isReadOnly ? 0.7 : 1,
                                 transition: 'background 0.3s ease',
                                 display: 'flex',
                                 alignItems: 'center',

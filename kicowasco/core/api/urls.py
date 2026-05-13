@@ -1,12 +1,15 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views import (
-    IncidentViewSet, RepairViewSet, InspectionViewSet, 
-    TreatmentLogViewSet, ExhausterViewSet, LicenseViewSet, 
+    IncidentViewSet, RepairViewSet, InspectionViewSet,
+    TreatmentLogViewSet, ExhausterViewSet, ExhausterLicenseViewSet, LicenseViewSet,
     SludgeCollectionViewSet, ConnectionReportViewSet, SummaryViewSet,
-    CustomTokenObtainPairView, WeeklyLinePatrolViewSet, 
-    InletWorksDailyTaskViewSet, DailyFlowRecordViewSet, UserViewSet,
-    AttachmentViewSet
+    CustomTokenObtainPairView,
+    SewerLineSectionViewSet, PatrolRowViewSet, WeeklyLinePatrolViewSet,
+    InletWorksDailyTaskViewSet, DailyLabRecordViewSet, DailyFlowRecordViewSet,
+    TreatmentPondViewSet, PondDailyLogViewSet, PondYearlyTaskViewSet,
+    UserViewSet,
+    AttachmentViewSet,
 )
 
 # Create a router and register our viewsets with it.
@@ -17,21 +20,28 @@ router.register(r'inspections', InspectionViewSet, basename='inspection')
 router.register(r'treatment-logs', TreatmentLogViewSet, basename='treatmentlog')
 router.register(r'exhausters', ExhausterViewSet, basename='exhauster')
 router.register(r'licenses', LicenseViewSet, basename='license')
-router.register(r'sludge-collections', SludgeCollectionViewSet, basename='sludgecollection')
+router.register(r'sludge', SludgeCollectionViewSet, basename='sludgecollection')
 router.register(r'connections', ConnectionReportViewSet, basename='connection')
 router.register(r'users', UserViewSet, basename='user')
 router.register(r'attachments', AttachmentViewSet, basename='attachment')
 
 # Registering the new operational templates
-router.register(r'weekly-patrols', WeeklyLinePatrolViewSet, basename='weeklypatrol')
-router.register(r'inlet-daily-tasks', InletWorksDailyTaskViewSet, basename='inletdailytask')
-router.register(r'daily-flow-records', DailyFlowRecordViewSet, basename='dailyflowrecord')
+router.register(r'sewer-line-sections', SewerLineSectionViewSet, basename='sewerlinesection')
+router.register(r'patrol-rows', PatrolRowViewSet, basename='patrolrow')
+router.register(r'patrols', WeeklyLinePatrolViewSet, basename='weeklypatrol')
+router.register(r'f203a', InletWorksDailyTaskViewSet, basename='inletdailytask')
+router.register(r'lab-records', DailyLabRecordViewSet, basename='dailylabrecord')
+router.register(r'flow-records', DailyFlowRecordViewSet, basename='dailyflowrecord')
+router.register(r'ponds', TreatmentPondViewSet, basename='treatmentpond')
+router.register(r'pond-logs', PondDailyLogViewSet, basename='ponddailylog')
+router.register(r'pond-tasks', PondYearlyTaskViewSet, basename='pondyearlytask')
 
 # Custom routes for summary and authentication endpoints
 custom_patterns = [
     # Intercepting the token generation to inject user roles
     path('auth/token/', CustomTokenObtainPairView.as_view(), name='token_obtain_pair'),
-    path('monthly-summary/', SummaryViewSet.as_view(), name='monthly-summary'),
+    path('summary/', SummaryViewSet.as_view(), name='summary'),
+    path('summary/lock_month/', SummaryViewSet.as_view(), name='summary_lock_month'),
 ]
 
 urlpatterns = [

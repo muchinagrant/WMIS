@@ -16,8 +16,6 @@ from .views import (
     LicenseViewSet,
     SludgeCollectionViewSet,
     
-    # Summary View
-    MonthlySummaryView,  # Import the new view
 )
 
 # Initialize the router
@@ -42,15 +40,11 @@ router.register(r'treatment-logs', TreatmentLogViewSet, basename='treatmentlog')
 # ============================================
 router.register(r'exhausters', ExhausterViewSet, basename='exhauster')
 router.register(r'licenses', LicenseViewSet, basename='license')
-router.register(r'sludge-collections', SludgeCollectionViewSet, basename='sludgecollection')
+router.register(r'sludge', SludgeCollectionViewSet, basename='sludgecollection')
 
 # The API URLs are now determined automatically by the router.
 urlpatterns = [
     path('', include(router.urls)),
-    # Add the custom endpoint for the summary dashboard
-    # This will be accessible at: /api/summaries/monthly/?year=2024&month=3
-    # For CSV export: /api/summaries/monthly/?year=2024&month=3&export=csv
-    path('summaries/monthly/', MonthlySummaryView.as_view(), name='monthly-summary'),
 ]
 
 # Optional: Add a simple API root view if needed
@@ -70,8 +64,7 @@ def api_root(request):
         'treatment-logs': reverse('treatmentlog-list', request=request),
         'exhausters': reverse('exhauster-list', request=request),
         'licenses': reverse('license-list', request=request),
-        'sludge-collections': reverse('sludgecollection-list', request=request),
-        'monthly-summary': reverse('monthly-summary', request=request),  # Added to root endpoint
+        'sludge': reverse('sludgecollection-list', request=request),
     })
 
 # Add the root endpoint to urlpatterns

@@ -19,7 +19,7 @@ from .serializers import (
     TreatmentLogSerializer, IncidentSerializer, UserSerializer,
     ExhausterSerializer, LicenseSerializer, SludgeCollectionSerializer
 )
-from .permissions import IsSupervisor, IsInspector, IsOperator
+from .permissions import IsLineSupervisorOrAbove
 
 
 # --- MONTHLY SUMMARY VIEW WITH CSV EXPORT ---
@@ -347,12 +347,12 @@ class SludgeCollectionViewSet(viewsets.ModelViewSet):
         queryset = super().get_queryset()
         user = self.request.user
         
-        # Filter by driver if user is driver
-        if user.role == 'driver':
+        # Filter by driver if user is a line attendant
+        if user.role == 'line_attendant':
             queryset = queryset.filter(exhauster_driver=user)
         
         # Filter by receiving officer if user is operator/supervisor
-        if user.role in ['operator', 'supervisor'] and self.request.query_params.get('my_receipts'):
+        if user.role in ['stp_operator', 'stp_supervisor'] and self.request.query_params.get('my_receipts'):
             queryset = queryset.filter(receiving_officer=user)
         
         # Filter by date range
@@ -511,7 +511,7 @@ class InspectionViewSet(viewsets.ModelViewSet):
         queryset = super().get_queryset()
         user = self.request.user
         
-        if user.role == 'inspector':
+        if user.role in ['line_attendant', 'sewer_line_officer']:
             queryset = queryset.filter(inspector=user)
         
         start_date = self.request.query_params.get('start_date', None)
@@ -585,7 +585,7 @@ class TreatmentLogViewSet(viewsets.ModelViewSet):
         queryset = super().get_queryset()
         user = self.request.user
         
-        if user.role == 'operator':
+        if user.role in ['stp_operator', 'lab_tech']:
             queryset = queryset.filter(operator=user)
         
         start_date = self.request.query_params.get('start_date', None)
@@ -747,7 +747,7 @@ class RepairViewSet(viewsets.ModelViewSet):
         queryset = super().get_queryset()
         user = self.request.user
         
-        if user.role == 'technician':
+        if user.role == 'line_attendant':
             queryset = queryset.filter(technician=user)
         
         incident_id = self.request.query_params.get('incident', None)
@@ -766,7 +766,7 @@ class RepairViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         serializer.save(technician=self.request.user)
 
-    @action(detail=True, methods=['patch'], permission_classes=[IsAuthenticated, IsSupervisor])
+    @action(detail=True, methods=['patch'], permission_classes=[IsAuthenticated, IsLineSupervisorOrAbove])
     def certify(self, request, pk=None):
         """
         Certify a repair with supervisor signature.

@@ -23,7 +23,7 @@ const RepairForm = ({ incidentId, locationText, onSuccess }) => {
   
   const { isOnline, refreshQueueCount } = useContext(SyncContext);
   const { user } = useContext(AuthContext); 
-  const userRole = user?.role || 'attendant';
+  const userRole = user?.role || 'line_attendant';
 
   const handleCreateRepair = async (values, { setSubmitting, resetForm }) => {
     setStatusMsg({ type: 'info', message: 'Processing repair submission...' });
@@ -172,7 +172,7 @@ const RepairForm = ({ incidentId, locationText, onSuccess }) => {
       )}
 
       {/* Signature Box for Supervisor */}
-      {(createdRepairId && ['admin', 'superintendent', 'supervisor'].includes(userRole)) && (
+        {(createdRepairId && ['admin', 'stp_superintendent', 'line_supervisor'].includes(userRole)) && (
           <div className="signature-area" style={{ marginTop: '20px', padding: '25px', background: '#f8fafc', borderRadius: '8px', border: '2px dashed #cbd5e1' }}>
              <h3 style={{ color: '#0f172a', marginBottom: '15px' }}><i className="fas fa-file-signature"></i> Supervisor Certification</h3>
              <div style={{ border: '2px solid #94a3b8', borderRadius: '6px', background: 'white', marginBottom: '15px' }}>

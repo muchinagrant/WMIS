@@ -12,12 +12,31 @@ const MonthlySummary = () => {
     const [selectedMonth, setSelectedMonth] = useState(currentDate.getMonth() + 1);
 
     const { user } = useContext(AuthContext);
+    const userRole = user?.role || '';
+    const canLock = ['admin', 'stp_superintendent'].includes(userRole);
+    const [lockMsg, setLockMsg] = useState({ type: '', text: '' });
+    const [locking, setLocking] = useState(false);
+
+    const handleLockMonth = async () => {
+        if (!window.confirm(`Lock ${new Date(0, selectedMonth - 1).toLocaleString('default', { month: 'long' })} ${selectedYear}? This cannot be undone.`)) return;
+        setLocking(true);
+        setLockMsg({ type: '', text: '' });
+        try {
+            await api.post('/api/summary/lock_month/', { year: selectedYear, month: selectedMonth });
+            setLockMsg({ type: 'success', text: `${new Date(0, selectedMonth - 1).toLocaleString('default', { month: 'long' })} ${selectedYear} is now locked.` });
+            fetchSummaryData();
+        } catch (err) {
+            setLockMsg({ type: 'error', text: err.response?.data?.error || 'Lock failed.' });
+        } finally {
+            setLocking(false);
+        }
+    };
 
     const fetchSummaryData = useCallback(async () => {
         setLoading(true);
         setErrorMsg('');
         try {
-            const res = await api.get(`/api/monthly-summary/?year=${selectedYear}&month=${selectedMonth}`);
+            const res = await api.get(`/api/summary/?year=${selectedYear}&month=${selectedMonth}`);
             setSummaryData(res.data);
         } catch (err) {
             console.error('Failed to fetch summary', err);
@@ -32,7 +51,7 @@ const MonthlySummary = () => {
     }, [fetchSummaryData]);
 
     const handleExport = () => {
-        window.open(`${api.defaults.baseURL}/api/monthly-summary/?year=${selectedYear}&month=${selectedMonth}&export=csv`, '_blank');
+        window.open(`${api.defaults.baseURL}/api/summary/?year=${selectedYear}&month=${selectedMonth}&export=csv`, '_blank');
     };
 
     const KPICard = ({ title, value, icon, color, subtitle }) => (
@@ -80,8 +99,34 @@ const MonthlySummary = () => {
                     <button onClick={handleExport} style={{ background: '#16a34a', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>
                         <i className="fas fa-file-csv"></i> Export CSV
                     </button>
+                    {canLock && summaryData && !summaryData.is_locked && (
+                        <button
+                            onClick={handleLockMonth}
+                            disabled={locking}
+                            style={{ background: locking ? '#94a3b8' : '#dc2626', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '6px', cursor: locking ? 'not-allowed' : 'pointer', fontWeight: 'bold' }}
+                        >
+                            <i className={`fas ${locking ? 'fa-spinner fa-spin' : 'fa-lock'}`}></i> Lock Month
+                        </button>
+                    )}
                 </div>
             </div>
+
+            {summaryData?.is_locked && (
+                <div style={{ background: '#fef3c7', border: '1px solid #f59e0b', borderRadius: '8px', padding: '12px 16px', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <i className="fas fa-lock" style={{ color: '#d97706' }}></i>
+                    <span style={{ fontWeight: 600, color: '#92400e' }}>Locked snapshot</span>
+                    <span style={{ color: '#78350f', fontSize: '0.88rem' }}>
+                        — Frozen by {summaryData.locked_by} on {new Date(summaryData.locked_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}. Data reflects the state at lock time.
+                    </span>
+                </div>
+            )}
+
+            {lockMsg.text && (
+                <div style={{ padding: '12px 16px', borderRadius: '6px', marginBottom: '16px', background: lockMsg.type === 'success' ? '#d1fae5' : '#fee2e2', color: lockMsg.type === 'success' ? '#065f46' : '#991b1b' }}>
+                    <i className={`fas ${lockMsg.type === 'success' ? 'fa-check-circle' : 'fa-exclamation-circle'}`} style={{ marginRight: 6 }}></i>
+                    {lockMsg.text}
+                </div>
+            )}
 
             {errorMsg && <div style={{ background: '#fee2e2', color: '#991b1b', padding: '15px', borderRadius: '6px', marginBottom: '20px' }}>{errorMsg}</div>}
 

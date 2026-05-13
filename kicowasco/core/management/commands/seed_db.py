@@ -7,13 +7,19 @@ from django.utils import timezone
 from faker import Faker
 
 from core.models import (
+    DailyLabRecord,
     Exhauster,
+    ExhausterLicense,
     Incident,
-    License,
+    PondDailyLog,
+    PondYearlyTask,
     Repair,
+    SewerLineSection,
+    PatrolRow,
     SludgeCollection,
     TreatmentLog,
     TreatmentParameter,
+    TreatmentPond,
     WeeklyLinePatrol,
 )
 
@@ -29,11 +35,12 @@ class Command(BaseCommand):
 
         # --- 1. CREATE USERS ---
         users_data = [
-            {"username": "Sarah", "first_name": "Sarah", "last_name": "Wanjiku", "role": "superintendent"},
-            {"username": "Peter", "first_name": "Peter", "last_name": "Kamau", "role": "supervisor"},
+            {"username": "Sarah", "first_name": "Sarah", "last_name": "Wanjiku", "role": "stp_superintendent"},
+            {"username": "Peter", "first_name": "Peter", "last_name": "Kamau", "role": "stp_supervisor"},
             {"username": "Alice", "first_name": "Alice", "last_name": "Muthoni", "role": "lab_tech"},
-            {"username": "John", "first_name": "John", "last_name": "Musyoka", "role": "operator"},
-            {"username": "Kevin", "first_name": "Kevin", "last_name": "Otieno", "role": "attendant"},
+            {"username": "John", "first_name": "John", "last_name": "Musyoka", "role": "stp_operator"},
+            {"username": "Kevin", "first_name": "Kevin", "last_name": "Otieno", "role": "line_attendant"},
+            {"username": "linespv", "first_name": "Line", "last_name": "Supervisor", "role": "line_supervisor"},
         ]
 
         users_dict = {}
@@ -48,8 +55,32 @@ class Command(BaseCommand):
             user.save()
             users_dict[u_data["username"]] = user
 
-        # --- 2. CREATE FLEET ---
+        # --- 2. SEED SEWER LINE SECTIONS ---
+        sections_to_seed = [
+            {'code': 'KRG-MAIN', 'is_confirmed': False},
+            {'code': 'KTS-MAIN', 'is_confirmed': False},
+            {'code': 'SGN-MAIN', 'is_confirmed': False},
+        ]
+        sewer_sections = {}
+        for sec_data in sections_to_seed:
+            section, _ = SewerLineSection.objects.get_or_create(
+                code=sec_data['code'],
+                defaults={'is_confirmed': sec_data['is_confirmed']},
+            )
+            sewer_sections[sec_data['code']] = section
+
+        # --- 3. CREATE FLEET ---
         now = timezone.now()
+        # --- 1b. TREATMENT PONDS ---
+        pond1, _ = TreatmentPond.objects.get_or_create(
+            code='AP-01',
+            defaults={'name': 'Anaerobic Pond 1', 'capacity_m3': 2500, 'is_active': True},
+        )
+        pond2, _ = TreatmentPond.objects.get_or_create(
+            code='AP-02',
+            defaults={'name': 'Anaerobic Pond 2', 'capacity_m3': 2500, 'is_active': True},
+        )
+
         ex1, _ = Exhauster.objects.get_or_create(
             reg_no="KCC 123A",
             defaults={"owner": "Clean Waste Ltd", "capacity_m3": 10},
@@ -63,16 +94,16 @@ class Command(BaseCommand):
             defaults={"owner": "County Exhauster", "capacity_m3": 8},
         )
 
-        License.objects.get_or_create(
+        ExhausterLicense.objects.get_or_create(
             exhauster=ex1,
             defaults={
                 "license_no": "LIC-2026-001",
                 "start_date": now.date() - timedelta(days=30),
                 "end_date": now.date() + timedelta(days=330),
-                "status": "valid",
+                "status": "active",
             },
         )
-        License.objects.get_or_create(
+        ExhausterLicense.objects.get_or_create(
             exhauster=ex2,
             defaults={
                 "license_no": "LIC-2025-999",
@@ -81,13 +112,13 @@ class Command(BaseCommand):
                 "status": "expired",
             },
         )
-        License.objects.get_or_create(
+        ExhausterLicense.objects.get_or_create(
             exhauster=ex3,
             defaults={
                 "license_no": "LIC-2026-002",
                 "start_date": now.date() - timedelta(days=15),
                 "end_date": now.date() + timedelta(days=180),
-                "status": "valid",
+                "status": "active",
             },
         )
 
@@ -139,23 +170,70 @@ class Command(BaseCommand):
                     source_name=fake.company(),
                     volume_m3=random.uniform(5, 15),
                     exhauster=random.choice([ex1, ex2, ex3]),
-                    receiving_officer=users_dict["John"],
-                    manifest_status="completed",
+                    received_by=users_dict["John"],
+                    manifest_status="received",
                 )
 
             # C. F201 Weekly Patrol (1 per day simulating different routes)
-            WeeklyLinePatrol.objects.create(
+            area_section_map = {
+                "Kerugoya Central": sewer_sections['KRG-MAIN'],
+                "Kutus Market": sewer_sections['KTS-MAIN'],
+                "Sagana Highway": sewer_sections['SGN-MAIN'],
+            }
+            drainage_area = random.choice(["Kerugoya Central", "Kutus Market", "Sagana Highway"])
+            patrol = WeeklyLinePatrol.objects.create(
                 date=sim_date,
-                time=sim_dt.time(),
-                drainage_area=random.choice(["Kerugoya Central", "Kutus Market", "Sagana Highway"]),
-                sewer_line_ref=f"SL-{random.randint(100, 999)}",
+                week_number=sim_dt.isocalendar()[1],
+                drainage_area=drainage_area,
                 attendant=users_dict["Kevin"],
+            )
+            PatrolRow.objects.create(
+                weekly_patrol=patrol,
+                time=sim_dt.time(),
+                sewer_line_section=area_section_map[drainage_area],
+                sewer_line_ref_text=f"SL-{random.randint(100, 999)}",
                 abnormality_observed=random.choice(["none", "none", "blockage", "missing_cover"]),
-                new_mother_accounts=random.randint(0, 2),
-                new_child_accounts=random.randint(0, 3),
+                new_mother_connections=random.randint(0, 2),
+                new_child_connections=random.randint(0, 3),
             )
 
-            # D. Incidents and Repairs Pipeline
+            # C2. Pond Daily Logs
+            for pond in [pond1, pond2]:
+                if not PondDailyLog.objects.filter(pond=pond, log_date=sim_date).exists():
+                    PondDailyLog.objects.create(
+                        pond=pond,
+                        log_date=sim_date,
+                        submitted_by=users_dict.get('Kevin'),
+                        ph=round(random.uniform(6.8, 7.8), 2),
+                        temperature=round(random.uniform(20.0, 28.0), 2),
+                        do_level=round(random.uniform(0.1, 1.5), 2),
+                        surface_scum=random.random() < 0.15,
+                        odour_complaint=random.random() < 0.10,
+                        colour=random.choice(['grey', 'dark grey', 'brown', 'black']),
+                        status='submitted',
+                    )
+
+            # D. Daily Lab Record
+            if not DailyLabRecord.objects.filter(record_date=sim_date).exists():
+                DailyLabRecord.objects.create(
+                    record_date=sim_date,
+                    attendant=users_dict.get('Kevin'),
+                    inflow_ph=round(random.uniform(6.5, 8.5), 2),
+                    inflow_temperature=round(random.uniform(20.0, 30.0), 2),
+                    inflow_tss=round(random.uniform(180, 350), 2),
+                    inflow_bod=round(random.uniform(150, 320), 2) if day_offset % 3 == 0 else None,
+                    effluent_ph=round(random.uniform(6.8, 7.8), 2),
+                    effluent_temperature=round(random.uniform(19.0, 27.0), 2),
+                    effluent_tss=round(random.uniform(10, 45), 2),
+                    effluent_bod=round(random.uniform(8, 40), 2) if day_offset % 3 == 0 else None,
+                    effluent_turbidity=round(random.uniform(2.0, 8.0), 2),
+                    effluent_chlorine=round(random.uniform(0.5, 3.5), 2),
+                    effluent_do=round(random.uniform(4.0, 8.0), 2),
+                    volume_treated_m3=round(random.uniform(200, 450), 3),
+                    status='submitted',
+                )
+
+            # E. Incidents and Repairs Pipeline
             for _ in range(random.randint(1, 2)):
                 if day_offset > days_to_seed - 7:
                     status_choice = random.choice(["new", "assigned", "in_progress", "pending_certification", "resolved"])
@@ -197,7 +275,7 @@ class Command(BaseCommand):
                         scope_of_work=f"Attended to {category}. Flushed lines and verified flow.",
                         materials_used="2 units PVC, 1 unit cement" if category == "burst" else "None",
                         technician=users_dict["Kevin"],
-                        supervisor=users_dict["Peter"] if status_choice == "resolved" else None,
+                        supervisor=users_dict["linespv"] if status_choice == "resolved" else None,
                         certified_at=(reported_at + timedelta(hours=5)) if status_choice == "resolved" else None,
                     )
 

@@ -23,7 +23,7 @@ const Header = () => {
                                 {user.full_name || user.username || 'System User'}
                             </span>
                             <span style={{ display: 'block', fontSize: '0.75rem', opacity: 0.8, textTransform: 'capitalize' }}>
-                                {user.role ? user.role.replace(/_/g, ' ') : 'Attendant'}
+                                {user.role ? user.role.replace(/_/g, ' ') : 'Line Attendant'}
                             </span>
                         </div>
                         

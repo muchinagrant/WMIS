@@ -3,8 +3,10 @@ from rest_framework import serializers
 from .models import (
     Repair, Attachment, Inspection, InspectionEntry, 
     TreatmentLog, TreatmentParameter, Incident, User,
-    Exhauster, License, SludgeCollection, ConnectionReport, ConnectionApplication,
-    WeeklyLinePatrol, InletWorksDailyTask, DailyFlowRecord, FlowReading,
+    Exhauster, ExhausterLicense, SludgeCollection, ConnectionReport, ConnectionApplication,
+    SewerLineSection, PatrolRow, WeeklyLinePatrol, InletWorksDailyTask,
+    DailyFlowRecord, FlowReading, DailyLabRecord,
+    TreatmentPond, PondDailyLog, PondYearlyTask,
 )
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
@@ -261,15 +263,13 @@ class TreatmentLogSerializer(serializers.ModelSerializer):
 
 # --- EXHAUSTER MANAGEMENT SERIALIZERS ---
 
-class LicenseSerializer(serializers.ModelSerializer):
+class ExhausterLicenseSerializer(serializers.ModelSerializer):
     """
     Serializer for Exhauster licenses with date validation.
     """
-    # Deleted the 'is_active' and 'days_until_expiry' lines because they don't exist in the model!
-
     class Meta:
-        model = License
-        fields = '__all__'  # <--- THE BULLETPROOF FIX
+        model = ExhausterLicense
+        fields = '__all__'
         read_only_fields = ['created_at', 'updated_at']
 
     def validate(self, data):
@@ -281,29 +281,29 @@ class LicenseSerializer(serializers.ModelSerializer):
         start_date = data.get('start_date')
         end_date = data.get('end_date')
         exhauster = data.get('exhauster')
-        
+
         # Rule 1: End date must be after start date
         if start_date and end_date and end_date <= start_date:
             raise serializers.ValidationError(
                 {"end_date": "License end date must be after the start date."}
             )
-        
+
         # Rule 2: Check for overlapping licenses (if this is a new license or updating)
         if exhauster and start_date and end_date:
             instance = self.instance
-            overlapping = License.objects.filter(
+            overlapping = ExhausterLicense.objects.filter(
                 exhauster=exhauster,
                 start_date__lte=end_date,
                 end_date__gte=start_date
             )
             if instance:
                 overlapping = overlapping.exclude(pk=instance.pk)
-            
+
             if overlapping.exists():
                 raise serializers.ValidationError(
                     "This license overlaps with an existing license for this exhauster."
                 )
-        
+
         return data
 
 
@@ -311,16 +311,15 @@ class ExhausterSerializer(serializers.ModelSerializer):
     """
     Serializer for Exhauster vehicles with nested licenses.
     """
-    licenses = LicenseSerializer(many=True, read_only=True)
+    licenses = ExhausterLicenseSerializer(many=True, read_only=True)
     current_license = serializers.SerializerMethodField()
     has_valid_license = serializers.SerializerMethodField()
-    # BUG FIX: Removed owner_name because owner is a CharField, not a User model!
-    
+
     class Meta:
         model = Exhauster
         fields = [
-            'id', 'reg_no', 'owner', 'capacity_m3', 
-            'contact', 'date_registered', 'status', 'licenses', 
+            'id', 'reg_no', 'owner', 'capacity_m3',
+            'contact', 'date_registered', 'status', 'licenses',
             'current_license', 'has_valid_license', 'created_at', 'updated_at'
         ]
         read_only_fields = ['created_at', 'updated_at']
@@ -329,19 +328,19 @@ class ExhausterSerializer(serializers.ModelSerializer):
         if value <= 0:
             raise serializers.ValidationError("Capacity must be greater than zero.")
         return value
-    
+
     def validate_reg_no(self, value):
         if value and len(value) < 3:
             raise serializers.ValidationError("Registration number must be at least 3 characters.")
         return value.upper()
-    
+
     def get_current_license(self, obj):
         current = obj.licenses.filter(
             start_date__lte=timezone.now().date(),
             end_date__gte=timezone.now().date()
         ).first()
         if current:
-            return LicenseSerializer(current).data
+            return ExhausterLicenseSerializer(current).data
         return None
 
     def get_has_valid_license(self, obj):
@@ -349,7 +348,7 @@ class ExhausterSerializer(serializers.ModelSerializer):
         return obj.licenses.filter(
             start_date__lte=today,
             end_date__gte=today,
-            status='valid'
+            status='active'
         ).exists()
 
 
@@ -363,6 +362,9 @@ class ExhausterStatusSerializer(serializers.ModelSerializer):
         read_only_fields = ['updated_at']
 
 
+LicenseSerializer = ExhausterLicenseSerializer
+
+
 # --- SLUDGE COLLECTION SERIALIZERS ---
 
 class SludgeCollectionSerializer(serializers.ModelSerializer):
@@ -370,24 +372,21 @@ class SludgeCollectionSerializer(serializers.ModelSerializer):
     Serializer for sludge collection manifests.
     """
     exhauster_reg_no = serializers.ReadOnlyField(source='exhauster.reg_no')
-    
+    received_by_name = serializers.ReadOnlyField(source='received_by.get_full_name')
+
     class Meta:
         model = SludgeCollection
-        # MAGIC FIX: Automatically grabs all exact fields from models.py
         fields = '__all__'
-        read_only_fields = ['created_at', 'updated_at', 'receiving_officer', 'manifest_status']
+        read_only_fields = [
+            'created_at', 'updated_at',
+            'received_by', 'received_at',
+            'rejection_reason', 'manifest_status',
+        ]
 
     def validate_volume_m3(self, value):
         if value is not None and value <= 0:
             raise serializers.ValidationError("Volume must be greater than zero.")
         return value
-
-    def create(self, validated_data):
-        # Automatically assign the logged-in user as the receiving officer
-        request = self.context.get('request', None)
-        if request and hasattr(request, "user"):
-            validated_data['receiving_officer'] = request.user
-        return super().create(validated_data)
 
 
 class SludgeCollectionSummarySerializer(serializers.Serializer):
@@ -405,6 +404,7 @@ class SludgeCollectionSummarySerializer(serializers.Serializer):
 class RepairSerializer(serializers.ModelSerializer):
     technician_name = serializers.ReadOnlyField(source='technician.get_full_name')
     supervisor_name = serializers.ReadOnlyField(source='supervisor.get_full_name')
+    certified_by_name = serializers.ReadOnlyField(source='certified_by.get_full_name')
     incident_details = serializers.SerializerMethodField()
     attachments = AttachmentSerializer(many=True, read_only=True)
 
@@ -414,11 +414,17 @@ class RepairSerializer(serializers.ModelSerializer):
             'id', 'incident', 'incident_details', 'completion_date', 'location',
             'repair_type', 'scope_of_work', 'materials_used', 'technician',
             'technician_name', 'supervisor', 'supervisor_name',
-            'supervisor_signature', 'certified_at', 'created_at', 'updated_at',
-            'attachments'
+            'supervisor_signature',
+            'status', 'started_at', 'completed_at', 'certified_at',
+            'certified_by', 'certified_by_name', 'follow_up_required',
+            'created_at', 'updated_at', 'attachments',
         ]
-        # These fields should only be set via the specialized 'certify' endpoint
-        read_only_fields = ['supervisor', 'supervisor_signature', 'certified_at', 'created_at', 'updated_at']
+        read_only_fields = [
+            'supervisor', 'supervisor_signature',
+            'status', 'started_at', 'completed_at',
+            'certified_at', 'certified_by', 'certified_by_name',
+            'created_at', 'updated_at',
+        ]
 
     def get_incident_details(self, obj):
         if obj.incident:
@@ -435,21 +441,26 @@ class RepairSerializer(serializers.ModelSerializer):
 class IncidentSerializer(serializers.ModelSerializer):
     assigned_to_name = serializers.ReadOnlyField(source='assigned_to.get_full_name')
     created_by_name = serializers.ReadOnlyField(source='created_by.get_full_name')
+    duplicate_of_number = serializers.ReadOnlyField(source='duplicate_of.incident_number')
     repairs = RepairSerializer(many=True, read_only=True)
     attachments = AttachmentSerializer(many=True, read_only=True)
 
     class Meta:
         model = Incident
         fields = [
-            'id', 'reported_at', 'location_text', 'latitude', 'longitude', 
+            'id', 'incident_number', 'reported_at', 'location_text', 'latitude', 'longitude',
             'assisting_crew', 'category', 'severity', 'reported_by_name',
-            'reported_contact', 'description', 'status', 'assigned_to',
-            'assigned_to_name', 'received_by', 'received_date',
+            'reported_contact', 'description', 'status',
+            'duplicate_of', 'duplicate_of_number', 'rejection_reason',
+            'assigned_to', 'assigned_to_name', 'received_by', 'received_date',
             'foreman_signed_by', 'foreman_signature_image', 'created_by',
-            'created_by_name', 'created_at', 'updated_at', 'repairs',
-            'attachments'
+            'source_module', 'source_reference_id',
+            'created_by_name', 'created_at', 'updated_at', 'repairs', 'attachments',
         ]
-        read_only_fields = ['created_at', 'updated_at']
+        read_only_fields = [
+            'incident_number', 'duplicate_of', 'duplicate_of_number',
+            'rejection_reason', 'created_at', 'updated_at',
+        ]
 
 
 # --- USER SERIALIZER ---
@@ -518,30 +529,90 @@ class ConnectionReportSerializer(serializers.ModelSerializer):
 
 # --- F201: WEEKLY LINE PATROLS ---
 
+class SewerLineSectionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SewerLineSection
+        fields = ['id', 'code', 'is_confirmed']
+
+
+class PatrolRowSerializer(serializers.ModelSerializer):
+    section_code = serializers.ReadOnlyField(source='sewer_line_section.code')
+    section_is_confirmed = serializers.ReadOnlyField(source='sewer_line_section.is_confirmed')
+    incident_id = serializers.ReadOnlyField(source='incident_created.id')
+
+    class Meta:
+        model = PatrolRow
+        fields = [
+            'id', 'time', 'sewer_line_section', 'section_code', 'section_is_confirmed',
+            'sewer_line_ref_text', 'abnormality_observed', 'abnormality_details',
+            'new_mother_connections', 'new_child_connections',
+            'immediate_action_taken', 'further_action_required',
+            'incident_created', 'incident_id', 'created_at',
+        ]
+        read_only_fields = ['incident_created', 'incident_id', 'created_at']
+
+    def update(self, instance, validated_data):
+        if instance.incident_created_id:
+            validated_data.pop('further_action_required', None)
+        return super().update(instance, validated_data)
+
+
 class WeeklyLinePatrolSerializer(serializers.ModelSerializer):
     attendant_name = serializers.ReadOnlyField(source='attendant.get_full_name')
+    verified_by_name = serializers.ReadOnlyField(source='verified_by.get_full_name')
+    rows = PatrolRowSerializer(many=True)
 
     class Meta:
         model = WeeklyLinePatrol
-        fields = '__all__'
-        read_only_fields = ['created_at']
+        fields = [
+            'id', 'date', 'week_number', 'drainage_area', 'attendant', 'attendant_name',
+            'status', 'verified_by', 'verified_by_name', 'verified_at',
+            'rows', 'created_at',
+        ]
+        read_only_fields = ['created_at', 'week_number', 'verified_by', 'verified_at']
 
     def create(self, validated_data):
-        # Auto-assign the logged-in user if not explicitly provided
+        rows_data = validated_data.pop('rows', [])
         request = self.context.get('request', None)
-        if request and hasattr(request, "user") and 'attendant' not in validated_data:
+        if request and hasattr(request, 'user') and 'attendant' not in validated_data:
             validated_data['attendant'] = request.user
-        return super().create(validated_data)
+        date = validated_data.get('date')
+        if date and not validated_data.get('week_number'):
+            validated_data['week_number'] = date.isocalendar()[1]
+        patrol = WeeklyLinePatrol.objects.create(**validated_data)
+        for row_data in rows_data:
+            PatrolRow.objects.create(weekly_patrol=patrol, **row_data)
+        return patrol
+
+    def update(self, instance, validated_data):
+        rows_data = validated_data.pop('rows', None)
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+        if rows_data is not None:
+            instance.rows.all().delete()
+            for row_data in rows_data:
+                PatrolRow.objects.create(weekly_patrol=instance, **row_data)
+        return instance
 
 
 # --- F203A: INLET WORKS DAILY TASKS ---
 
 class InletWorksDailyTaskSerializer(serializers.ModelSerializer):
     attendant_name = serializers.ReadOnlyField(source='attendant.get_full_name')
+    incident_number = serializers.ReadOnlyField(source='incident_created.incident_number')
 
     class Meta:
         model = InletWorksDailyTask
         fields = '__all__'
+        read_only_fields = ['submitted_at', 'verified_by', 'verified_at', 'incident_created']
+
+    def create(self, validated_data):
+        request = self.context.get('request', None)
+        if request and hasattr(request, 'user'):
+            validated_data.setdefault('attendant', request.user)
+            validated_data.setdefault('submitted_by', request.user)
+        return super().create(validated_data)
 
 
 # --- F203C: INLET WORKS FLOW MEASUREMENT ---
@@ -557,7 +628,11 @@ class DailyFlowRecordSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = DailyFlowRecord
-        fields = ['id', 'date', 'remarks', 'readings', 'average_daily_flow']
+        fields = [
+            'id', 'date', 'remarks', 'readings', 'average_daily_flow',
+            'status', 'submitted_at', 'verified_by', 'verified_at'
+        ]
+        read_only_fields = ['average_daily_flow', 'submitted_at', 'verified_by', 'verified_at']
 
     def create(self, validated_data):
         readings_data = validated_data.pop('readings', [])
@@ -591,3 +666,100 @@ class DailyFlowRecordSerializer(serializers.ModelSerializer):
                 FlowReading.objects.create(daily_record=instance, **reading_data)
 
         return instance
+
+
+# --- F203B: DAILY LAB RECORDS ---
+
+LAB_PARAM_FIELDS = [
+    'inflow_ph', 'inflow_temperature', 'inflow_tss', 'inflow_bod',
+    'inflow_cod', 'inflow_tn', 'inflow_tp', 'inflow_fc',
+    'effluent_ph', 'effluent_temperature', 'effluent_tss', 'effluent_bod',
+    'effluent_cod', 'effluent_tn', 'effluent_tp', 'effluent_fc',
+    'effluent_turbidity', 'effluent_chlorine', 'effluent_do',
+    'volume_treated_m3', 'sludge_volume_m3',
+]
+
+
+class DailyLabRecordSerializer(serializers.ModelSerializer):
+    attendant_name = serializers.ReadOnlyField(source='attendant.get_full_name')
+    verified_by_name = serializers.ReadOnlyField(source='verified_by.get_full_name')
+    bod_removal_efficiency = serializers.ReadOnlyField()
+    tss_removal_efficiency = serializers.ReadOnlyField()
+    is_bod_exceedance = serializers.ReadOnlyField()
+    is_tss_exceedance = serializers.ReadOnlyField()
+
+    class Meta:
+        model = DailyLabRecord
+        fields = [
+            'id', 'record_date', 'attendant', 'attendant_name', 'remarks',
+            'status', 'verified_by', 'verified_by_name', 'verified_at',
+            'bod_removal_efficiency', 'tss_removal_efficiency',
+            'is_bod_exceedance', 'is_tss_exceedance',
+            'created_at', 'updated_at',
+        ] + LAB_PARAM_FIELDS
+        read_only_fields = [
+            'status', 'verified_by', 'verified_by_name', 'verified_at',
+            'bod_removal_efficiency', 'tss_removal_efficiency',
+            'is_bod_exceedance', 'is_tss_exceedance',
+            'created_at', 'updated_at',
+        ]
+
+    def update(self, instance, validated_data):
+        for field in LAB_PARAM_FIELDS:
+            if field in validated_data and validated_data[field] is not None:
+                setattr(instance, field, validated_data[field])
+        for attr in ('attendant', 'remarks', 'record_date'):
+            if attr in validated_data:
+                setattr(instance, attr, validated_data[attr])
+        instance.save()
+        return instance
+
+
+# --- ANAEROBIC POND OPERATIONS ---
+
+class TreatmentPondSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TreatmentPond
+        fields = ['id', 'code', 'name', 'capacity_m3', 'is_active']
+
+
+class PondDailyLogSerializer(serializers.ModelSerializer):
+    submitted_by_name  = serializers.ReadOnlyField(source='submitted_by.get_full_name')
+    cosigned_by_name   = serializers.ReadOnlyField(source='cosigned_by.get_full_name')
+    verified_by_name   = serializers.ReadOnlyField(source='verified_by.get_full_name')
+    pond_code          = serializers.ReadOnlyField(source='pond.code')
+    incident_number    = serializers.ReadOnlyField(source='incident_created.incident_number')
+
+    class Meta:
+        model = PondDailyLog
+        fields = [
+            'id', 'pond', 'pond_code', 'log_date',
+            'submitted_by', 'submitted_by_name',
+            'ph', 'temperature', 'do_level',
+            'surface_scum', 'odour_complaint', 'colour', 'remarks',
+            'status',
+            'cosigned_by', 'cosigned_by_name', 'cosigned_at',
+            'verified_by', 'verified_by_name', 'verified_at',
+            'incident_created', 'incident_number',
+            'created_at', 'updated_at',
+        ]
+        read_only_fields = [
+            'status', 'cosigned_by', 'cosigned_by_name', 'cosigned_at',
+            'verified_by', 'verified_by_name', 'verified_at',
+            'incident_created', 'incident_number',
+            'created_at', 'updated_at',
+        ]
+
+
+class PondYearlyTaskSerializer(serializers.ModelSerializer):
+    pond_code     = serializers.ReadOnlyField(source='pond.code')
+    assigned_name = serializers.ReadOnlyField(source='assigned_to.get_full_name')
+
+    class Meta:
+        model = PondYearlyTask
+        fields = [
+            'id', 'pond', 'pond_code', 'year', 'task_name', 'description',
+            'due_date', 'status', 'assigned_to', 'assigned_name',
+            'completed_at', 'notes', 'created_at',
+        ]
+        read_only_fields = ['created_at']

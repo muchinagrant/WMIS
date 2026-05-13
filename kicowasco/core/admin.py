@@ -2,8 +2,9 @@ from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
 from .models import (
     User, Incident, Repair, Inspection, InspectionEntry,
-    TreatmentLog, TreatmentParameter, Exhauster, License,
-    SludgeCollection, ConnectionReport, ConnectionApplication,
+    TreatmentLog, TreatmentParameter, Exhauster, ExhausterLicense,
+    SludgeCollection, ConnectionReport, ConnectionApplication, DailyLabRecord,
+    TreatmentPond, PondDailyLog, PondYearlyTask,
 )
 
 # --- 1. USER MANAGEMENT ---
@@ -58,8 +59,8 @@ class ExhausterAdmin(admin.ModelAdmin):
     list_filter = ('status',)
     search_fields = ('reg_no', 'owner')
 
-@admin.register(License)
-class LicenseAdmin(admin.ModelAdmin):
+@admin.register(ExhausterLicense)
+class ExhausterLicenseAdmin(admin.ModelAdmin):
     list_display = ('license_no', 'exhauster', 'start_date', 'end_date', 'status')
     list_filter = ('status', 'end_date')
 
@@ -76,6 +77,27 @@ class ConnectionApplicationInline(admin.TabularInline):
 
 @admin.register(ConnectionReport)
 class ConnectionReportAdmin(admin.ModelAdmin):
-    list_display = ('ward', 'start_date', 'prepared_by')
-    list_filter = ('ward', 'start_date')
+    list_display = ('start_date', 'prepared_by')
+    list_filter = ('start_date',)
     inlines = [ConnectionApplicationInline]
+
+@admin.register(DailyLabRecord)
+class DailyLabRecordAdmin(admin.ModelAdmin):
+    list_display = ('record_date', 'attendant', 'status', 'effluent_bod', 'effluent_tss', 'verified_by')
+    list_filter = ('status', 'record_date')
+    search_fields = ('record_date',)
+
+@admin.register(TreatmentPond)
+class TreatmentPondAdmin(admin.ModelAdmin):
+    list_display = ('code', 'name', 'capacity_m3', 'is_active')
+
+@admin.register(PondDailyLog)
+class PondDailyLogAdmin(admin.ModelAdmin):
+    list_display = ('pond', 'log_date', 'status', 'submitted_by', 'ph', 'do_level')
+    list_filter = ('status', 'log_date', 'pond')
+    search_fields = ('pond__code',)
+
+@admin.register(PondYearlyTask)
+class PondYearlyTaskAdmin(admin.ModelAdmin):
+    list_display = ('pond', 'year', 'task_name', 'status', 'due_date', 'assigned_to')
+    list_filter = ('status', 'year', 'pond')
