@@ -658,9 +658,9 @@ class SummaryViewSet(APIView):
 
         collections = SludgeCollection.objects.filter(collection_date__year=year, collection_date__month=month)
         total_volume = collections.aggregate(Sum('volume_m3'))['volume_m3__sum'] or 0
-        res_vol  = collections.filter(source_type='residential').aggregate(Sum('volume_m3'))['volume_m3__sum'] or 0
+        res_vol = collections.filter(source_type='residential').aggregate(Sum('volume_m3'))['volume_m3__sum'] or 0
         inst_vol = collections.filter(source_type='institutional').aggregate(Sum('volume_m3'))['volume_m3__sum'] or 0
-        com_vol  = collections.filter(source_type='commercial').aggregate(Sum('volume_m3'))['volume_m3__sum'] or 0
+        com_vol = collections.filter(source_type='commercial').aggregate(Sum('volume_m3'))['volume_m3__sum'] or 0
 
         return {
             "collection": {
@@ -728,15 +728,14 @@ class SummaryViewSet(APIView):
         real_data['is_locked'] = False
 
         # Extract refs for CSV export
-        incidents = Incident.objects.filter(reported_at__year=year, reported_at__month=month)
         treatment_data = real_data['treatment']
         total_volume = real_data['sludge']['total_volume_m3']
-        res_vol  = real_data['sludge']['breakdown']['residential']
+        res_vol = real_data['sludge']['breakdown']['residential']
         inst_vol = real_data['sludge']['breakdown']['institutional']
-        com_vol  = real_data['sludge']['breakdown']['commercial']
-        total_incidents  = real_data['collection']['total_incidents']
+        com_vol = real_data['sludge']['breakdown']['commercial']
+        total_incidents = real_data['collection']['total_incidents']
         resolved_incidents = real_data['collection']['resolved_incidents']
-        repairs_completed  = real_data['collection']['repairs_completed']
+        repairs_completed = real_data['collection']['repairs_completed']
         export_format = request.query_params.get('export', 'json').lower()
         if export_format == 'csv':
             response = HttpResponse(

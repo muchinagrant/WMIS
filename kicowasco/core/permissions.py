@@ -6,9 +6,9 @@ class IsSTPOperatorOrAbove(BasePermission):
 
     def has_permission(self, request, view):
         return bool(
-            request.user
-            and request.user.is_authenticated
-            and getattr(request.user, 'role', '') in self.allowed
+            request.user and
+            request.user.is_authenticated and
+            getattr(request.user, 'role', '') in self.allowed
         )
 
 
@@ -17,9 +17,9 @@ class IsSTPSupervisorOrAbove(BasePermission):
 
     def has_permission(self, request, view):
         return bool(
-            request.user
-            and request.user.is_authenticated
-            and getattr(request.user, 'role', '') in self.allowed
+            request.user and
+            request.user.is_authenticated and
+            getattr(request.user, 'role', '') in self.allowed
         )
 
 
@@ -28,9 +28,9 @@ class IsSTPSuperintendent(BasePermission):
 
     def has_permission(self, request, view):
         return bool(
-            request.user
-            and request.user.is_authenticated
-            and getattr(request.user, 'role', '') in self.allowed
+            request.user and
+            request.user.is_authenticated and
+            getattr(request.user, 'role', '') in self.allowed
         )
 
 
@@ -40,7 +40,7 @@ class IsLineSupervisorOrAbove(BasePermission):
 
     def has_permission(self, request, view):
         return bool(
-            request.user
-            and request.user.is_authenticated
-            and getattr(request.user, 'role', '') in self.allowed
+            request.user and
+            request.user.is_authenticated and
+            getattr(request.user, 'role', '') in self.allowed
         )

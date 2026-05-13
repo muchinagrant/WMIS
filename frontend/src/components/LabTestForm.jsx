@@ -20,8 +20,6 @@ const MONTHS = [
     'July','August','September','October','November','December',
 ];
 
-const fmtVal = (v) => (v !== null && v !== undefined) ? Number(v).toFixed(1) : '—';
-
 const isBODExceedance  = (r) => isExceedance('effluent_bod', r?.effluent_bod);
 const isTSSExceedance  = (r) => isExceedance('effluent_tss', r?.effluent_tss);
 const isTurbExceedance = (r) => isExceedance('effluent_turbidity', r?.effluent_turbidity);

@@ -724,11 +724,11 @@ class TreatmentPondSerializer(serializers.ModelSerializer):
 
 
 class PondDailyLogSerializer(serializers.ModelSerializer):
-    submitted_by_name  = serializers.ReadOnlyField(source='submitted_by.get_full_name')
-    cosigned_by_name   = serializers.ReadOnlyField(source='cosigned_by.get_full_name')
-    verified_by_name   = serializers.ReadOnlyField(source='verified_by.get_full_name')
-    pond_code          = serializers.ReadOnlyField(source='pond.code')
-    incident_number    = serializers.ReadOnlyField(source='incident_created.incident_number')
+    submitted_by_name = serializers.ReadOnlyField(source='submitted_by.get_full_name')
+    cosigned_by_name = serializers.ReadOnlyField(source='cosigned_by.get_full_name')
+    verified_by_name = serializers.ReadOnlyField(source='verified_by.get_full_name')
+    pond_code = serializers.ReadOnlyField(source='pond.code')
+    incident_number = serializers.ReadOnlyField(source='incident_created.incident_number')
 
     class Meta:
         model = PondDailyLog
@@ -752,7 +752,7 @@ class PondDailyLogSerializer(serializers.ModelSerializer):
 
 
 class PondYearlyTaskSerializer(serializers.ModelSerializer):
-    pond_code     = serializers.ReadOnlyField(source='pond.code')
+    pond_code = serializers.ReadOnlyField(source='pond.code')
     assigned_name = serializers.ReadOnlyField(source='assigned_to.get_full_name')
 
     class Meta:
