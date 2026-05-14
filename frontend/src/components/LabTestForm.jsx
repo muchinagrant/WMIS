@@ -60,7 +60,8 @@ const LabTestForm = () => {
         setLoading(true);
         try {
             const res = await api.get('/api/lab-records/', { params: { year: selectedYear, month: selectedMonth } });
-            setRecords(res.data);
+            const rows = Array.isArray(res.data) ? res.data : (res.data?.results || []);
+            setRecords(rows);
         } catch {
             setActionMsg({ type: 'error', text: 'Failed to load records.' });
         } finally {

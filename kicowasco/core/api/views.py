@@ -46,10 +46,33 @@ class CustomTokenObtainPairView(TokenObtainPairView):
 
 User = get_user_model()
 
+
+def _company_filter_kwargs(path, company):
+    return {f'{path}__company': company}
+
+
+def _scope_queryset_by_company(qs, user, path):
+    company = getattr(user, 'company', None)
+    if not company:
+        return qs
+    return qs.filter(**_company_filter_kwargs(path, company))
+
 class IncidentViewSet(viewsets.ModelViewSet):
     queryset = Incident.objects.all().order_by('-reported_at')
     serializer_class = IncidentSerializer
     permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        company = getattr(self.request.user, 'company', None)
+        if not company:
+            return qs
+        return qs.filter(
+            Q(created_by__company=company) |
+            Q(assigned_to__company=company) |
+            Q(received_by__company=company) |
+            Q(foreman_signed_by__company=company)
+        ).distinct()
 
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user)
@@ -108,6 +131,8 @@ class IncidentViewSet(viewsets.ModelViewSet):
         
         try:
             technician = User.objects.get(id=user_id)
+            if getattr(request.user, 'company_id', None) and technician.company_id != request.user.company_id:
+                return Response({'error': 'Cannot assign incidents across companies.'}, status=status.HTTP_403_FORBIDDEN)
             
             # UPGRADED: Advance state machine AND automate the SLA timer
             incident.assigned_to = technician
@@ -327,6 +352,10 @@ class PatrolRowViewSet(viewsets.ModelViewSet):
     serializer_class = PatrolRowSerializer
     permission_classes = [IsAuthenticated]
 
+    def get_queryset(self):
+        qs = super().get_queryset()
+        return _scope_queryset_by_company(qs, self.request.user, 'weekly_patrol__attendant')
+
     @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated, IsLineSupervisorOrAbove])
     def escalate(self, request, pk=None):
         row = self.get_object()
@@ -376,6 +405,10 @@ class WeeklyLinePatrolViewSet(viewsets.ModelViewSet):
     queryset = WeeklyLinePatrol.objects.all().order_by('-date')
     serializer_class = WeeklyLinePatrolSerializer
     permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        return _scope_queryset_by_company(qs, self.request.user, 'attendant')
 
     @action(detail=True, methods=['patch'], permission_classes=[IsAuthenticated, IsLineSupervisorOrAbove])
     def verify(self, request, pk=None):
@@ -455,6 +488,7 @@ class DailyLabRecordViewSet(LockEnforcementMixin, viewsets.ModelViewSet):
 
     def get_queryset(self):
         qs = DailyLabRecord.objects.all()
+        qs = _scope_queryset_by_company(qs, self.request.user, 'attendant')
         year = self.request.query_params.get('year')
         month = self.request.query_params.get('month')
         if year:
@@ -513,6 +547,13 @@ class UserViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = UserSerializer
     permission_classes = [IsAuthenticated]
 
+    def get_queryset(self):
+        qs = super().get_queryset()
+        company = getattr(self.request.user, 'company', None)
+        if not company:
+            return qs
+        return qs.filter(company=company)
+
 
 # --- ATTACHMENT VIEWSET ---
 
@@ -553,6 +594,7 @@ class PondDailyLogViewSet(LockEnforcementMixin, viewsets.ModelViewSet):
 
     def get_queryset(self):
         qs = PondDailyLog.objects.select_related('pond', 'submitted_by', 'cosigned_by', 'verified_by').all()
+        qs = _scope_queryset_by_company(qs, self.request.user, 'submitted_by')
         year  = self.request.query_params.get('year')
         month = self.request.query_params.get('month')
         pond  = self.request.query_params.get('pond')
@@ -638,17 +680,39 @@ class PondYearlyTaskViewSet(viewsets.ModelViewSet):
 class SummaryViewSet(APIView):
     permission_classes = [IsAuthenticated]
 
-    def _aggregate_month(self, year, month):
+    def _aggregate_month(self, year, month, user=None):
         """Live aggregation of all metrics for the given year/month."""
         month_name = calendar.month_name[month]
 
+        company = getattr(user, 'company', None) if user else None
+
         incidents = Incident.objects.filter(reported_at__year=year, reported_at__month=month)
+        if company:
+            incidents = incidents.filter(
+                Q(created_by__company=company) |
+                Q(assigned_to__company=company) |
+                Q(received_by__company=company) |
+                Q(foreman_signed_by__company=company)
+            ).distinct()
+
         patrol_rows = PatrolRow.objects.filter(weekly_patrol__date__year=year, weekly_patrol__date__month=month)
+        if company:
+            patrol_rows = patrol_rows.filter(weekly_patrol__attendant__company=company)
+
         new_mother = patrol_rows.aggregate(Sum('new_mother_connections'))['new_mother_connections__sum'] or 0
         new_child = patrol_rows.aggregate(Sum('new_child_connections'))['new_child_connections__sum'] or 0
         repairs_completed = Repair.objects.filter(completion_date__year=year, completion_date__month=month).count()
+        if company:
+            repairs_completed = Repair.objects.filter(
+                completion_date__year=year,
+                completion_date__month=month,
+                technician__company=company,
+            ).count()
 
         lab_qs = DailyLabRecord.objects.filter(record_date__year=year, record_date__month=month)
+        if company:
+            lab_qs = lab_qs.filter(attendant__company=company)
+
         bod_exceedance_days = sum(1 for r in lab_qs if r.is_bod_exceedance)
         tss_exceedance_days = sum(1 for r in lab_qs if r.is_tss_exceedance)
         bod_vals = [r.bod_removal_efficiency for r in lab_qs if r.bod_removal_efficiency is not None]
@@ -657,6 +721,9 @@ class SummaryViewSet(APIView):
         avg_tss = round(sum(tss_vals) / len(tss_vals), 1) if tss_vals else None
 
         collections = SludgeCollection.objects.filter(collection_date__year=year, collection_date__month=month)
+        if company:
+            collections = collections.filter(received_by__company=company)
+
         total_volume = collections.aggregate(Sum('volume_m3'))['volume_m3__sum'] or 0
         res_vol = collections.filter(source_type='residential').aggregate(Sum('volume_m3'))['volume_m3__sum'] or 0
         inst_vol = collections.filter(source_type='institutional').aggregate(Sum('volume_m3'))['volume_m3__sum'] or 0
@@ -724,7 +791,7 @@ class SummaryViewSet(APIView):
         except MonthlySummarySnapshot.DoesNotExist:
             pass
 
-        real_data = self._aggregate_month(year, month)
+        real_data = self._aggregate_month(year, month, request.user)
         real_data['is_locked'] = False
 
         # Extract refs for CSV export
@@ -794,7 +861,7 @@ class SummaryViewSet(APIView):
         if snap.is_locked:
             return Response({'error': f'{calendar.month_name[month]} {year} is already locked.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        snapshot_data = self._aggregate_month(year, month)
+        snapshot_data = self._aggregate_month(year, month, request.user)
         snap.is_locked    = True
         snap.locked_by    = request.user
         snap.locked_at    = timezone.now()

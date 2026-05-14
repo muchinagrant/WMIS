@@ -69,6 +69,9 @@ const MonthlySummary = () => {
         </div>
     );
 
+    const formatPercent = (value) => (value === null || value === undefined ? 'N/A' : `${value}%`);
+    const getThresholdColor = (value) => (value !== null && value !== undefined && value >= 80 ? '#16a34a' : '#ca8a04');
+
     return (
         <div className="form-section active" style={{ background: '#f8fafc', padding: '25px', borderRadius: '12px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px', borderBottom: '2px solid #e2e8f0', paddingBottom: '15px' }}>
@@ -166,17 +169,17 @@ const MonthlySummary = () => {
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '20px', marginBottom: '35px' }}>
                         <KPICard
                             title="Avg BOD Removal Efficiency"
-                            value={`${summaryData.treatment.avg_bod_removal}%`}
+                            value={formatPercent(summaryData.treatment.avg_bod_removal)}
                             icon="fa-flask"
-                            color={summaryData.treatment.avg_bod_removal >= 80 ? '#16a34a' : '#ca8a04'}
-                            subtitle="Regulatory Target: > 80%"
+                            color={getThresholdColor(summaryData.treatment.avg_bod_removal)}
+                            subtitle={summaryData.treatment.data_available ? 'Regulatory Target: > 80%' : 'No lab efficiency data for selected month'}
                         />
                         <KPICard
                             title="Avg TSS Removal Efficiency"
-                            value={`${summaryData.treatment.avg_tss_removal}%`}
+                            value={formatPercent(summaryData.treatment.avg_tss_removal)}
                             icon="fa-filter"
-                            color={summaryData.treatment.avg_tss_removal >= 80 ? '#16a34a' : '#ca8a04'}
-                            subtitle="Regulatory Target: > 80%"
+                            color={getThresholdColor(summaryData.treatment.avg_tss_removal)}
+                            subtitle={summaryData.treatment.data_available ? 'Regulatory Target: > 80%' : 'No lab efficiency data for selected month'}
                         />
                         <KPICard
                             title="Compliance Alerts"

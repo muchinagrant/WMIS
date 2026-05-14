@@ -35,6 +35,13 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         token['username'] = user.username
         token['role'] = user.role
         token['full_name'] = user.full_name
+        token['company_id'] = user.company_id
+        token['company_name'] = user.company.name if user.company else ''
+        token['company_code'] = user.company.code if user.company else ''
+        token['company_email'] = user.company.email if user.company else ''
+        token['company_phone'] = user.company.phone if user.company else ''
+        token['company_website'] = user.company.website if user.company else ''
+        token['company_address'] = user.company.address if user.company else ''
         
         return token
 
@@ -467,10 +474,12 @@ class IncidentSerializer(serializers.ModelSerializer):
 
 class UserSerializer(serializers.ModelSerializer):
     full_name = serializers.ReadOnlyField(source='get_full_name')
+    company_name = serializers.ReadOnlyField(source='company.name')
+    company_code = serializers.ReadOnlyField(source='company.code')
     
     class Meta:
         model = User
-        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'full_name', 'role']
+        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'full_name', 'role', 'company', 'company_name', 'company_code']
 
 
 class UserProfileSerializer(serializers.ModelSerializer):
@@ -479,12 +488,14 @@ class UserProfileSerializer(serializers.ModelSerializer):
     """
     full_name = serializers.ReadOnlyField(source='get_full_name')
     initials = serializers.SerializerMethodField()
+    company_name = serializers.ReadOnlyField(source='company.name')
+    company_code = serializers.ReadOnlyField(source='company.code')
     
     class Meta:
         model = User
         fields = [
             'id', 'username', 'email', 'first_name', 'last_name', 
-            'full_name', 'initials', 'role', 'date_joined', 'last_login'
+            'full_name', 'initials', 'role', 'company', 'company_name', 'company_code', 'date_joined', 'last_login'
         ]
         read_only_fields = ['date_joined', 'last_login']
     

@@ -4,6 +4,24 @@ from django.conf import settings
 from django.utils import timezone
 
 
+class Company(models.Model):
+    """Simple organization profile for branding and user association."""
+    code = models.CharField(max_length=50, unique=True)
+    name = models.CharField(max_length=255)
+    email = models.EmailField(blank=True)
+    phone = models.CharField(max_length=50, blank=True)
+    website = models.CharField(max_length=255, blank=True)
+    address = models.CharField(max_length=255, blank=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['name']
+
+    def __str__(self):
+        return self.name
+
+
 class User(AbstractUser):
     # Aligned with the Organogram Grades
     ROLE_CHOICES = [
@@ -17,6 +35,13 @@ class User(AbstractUser):
         ('admin', 'System Admin'),
     ]
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='line_attendant')
+    company = models.ForeignKey(
+        Company,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='users'
+    )
 
     def __str__(self):
         return f"{self.username} ({self.get_role_display()})"
@@ -600,7 +625,7 @@ class ConnectionReport(models.Model):
         ordering = ['-start_date']
 
     def __str__(self):
-        return f"{self.get_ward_display()} Report ({self.start_date})"
+        return f"Connection Report ({self.start_date})"
 
 
 class ConnectionApplication(models.Model):

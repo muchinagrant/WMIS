@@ -5,18 +5,26 @@ from .models import (
     TreatmentLog, TreatmentParameter, Exhauster, ExhausterLicense,
     SludgeCollection, ConnectionReport, ConnectionApplication, DailyLabRecord,
     TreatmentPond, PondDailyLog, PondYearlyTask,
+    Company,
 )
 
 # --- 1. USER MANAGEMENT ---
 @admin.register(User)
 class CustomUserAdmin(UserAdmin):
-    list_display = ('username', 'email', 'role', 'is_staff')
+    list_display = ('username', 'email', 'role', 'company', 'is_staff')
     fieldsets = UserAdmin.fieldsets + (
-        ('Role Information', {'fields': ('role',)}),
+        ('Role Information', {'fields': ('role', 'company')}),
     )
     add_fieldsets = UserAdmin.add_fieldsets + (
-        ('Role Information', {'fields': ('role',)}),
+        ('Role Information', {'fields': ('role', 'company')}),
     )
+
+
+@admin.register(Company)
+class CompanyAdmin(admin.ModelAdmin):
+    list_display = ('code', 'name', 'email', 'phone', 'is_active')
+    list_filter = ('is_active',)
+    search_fields = ('code', 'name', 'email')
 
 # --- 2. INCIDENT & REPAIR MANAGEMENT ---
 @admin.register(Incident)

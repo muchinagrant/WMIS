@@ -7,6 +7,7 @@ from django.utils import timezone
 from faker import Faker
 
 from core.models import (
+    Company,
     DailyLabRecord,
     Exhauster,
     ExhausterLicense,
@@ -33,6 +34,18 @@ class Command(BaseCommand):
     def handle(self, *args, **kwargs):
         self.stdout.write(self.style.WARNING("Seeding database with 90 days of data... This will take a moment."))
 
+        default_company, _ = Company.objects.get_or_create(
+            code='kicowasco',
+            defaults={
+                'name': 'Kirinyaga County Water & Sanitation PLC',
+                'email': 'info@kicowasco.co.ke',
+                'phone': '0746555368',
+                'website': 'www.kicowasco.co.ke',
+                'address': 'P.O BOX 360-10300, KERUGOYA',
+                'is_active': True,
+            },
+        )
+
         # --- 1. CREATE USERS ---
         users_data = [
             {"username": "Sarah", "first_name": "Sarah", "last_name": "Wanjiku", "role": "stp_superintendent"},
@@ -49,6 +62,7 @@ class Command(BaseCommand):
             user.first_name = u_data["first_name"]
             user.last_name = u_data["last_name"]
             user.role = u_data["role"]
+            user.company = default_company
             # Ensure existing users are allowed to authenticate after reseeding.
             user.is_active = True
             user.set_password("kicowasco123")

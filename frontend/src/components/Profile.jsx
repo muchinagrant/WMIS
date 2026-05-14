@@ -12,6 +12,11 @@ const Profile = () => {
     const [loading, setLoading] = useState(true);
 
     const isSupervisor = ['admin', 'stp_superintendent', 'stp_supervisor', 'line_supervisor'].includes(user?.role);
+    const companyName = user?.company_name || 'KIRINYAGA COUNTY WATER & SANITATION PLC';
+    const companyAddress = user?.company_address || 'P.O BOX 360-10300, KERUGOYA';
+    const companyPhone = user?.company_phone || 'Official Tel: 0746555368 | Customer Care: 0715413591';
+    const companyEmail = user?.company_email || 'managingdirector@kicowasco.co.ke | info@kicowasco.co.ke';
+    const companyWebsite = user?.company_website || 'www.kicowasco.co.ke';
 
     useEffect(() => {
         const fetchUserStats = async () => {
@@ -112,12 +117,12 @@ const Profile = () => {
             {/* RELOCATED OFFICIAL BRANDING */}
             <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '25px', border: '1px solid #cbd5e1', textAlign: 'center' }}>
                 <img src="/logo512.png" alt="KICOWASCO Logo" style={{ width: '80px', height: '80px', marginBottom: '15px', objectFit: 'contain' }} onError={(e) => e.target.style.display = 'none'} />
-                <h3 style={{ color: '#1a6fb0', margin: '0 0 10px 0', fontSize: '1.3rem' }}>KIRINYAGA COUNTY WATER & SANITATION PLC</h3>
+                <h3 style={{ color: '#1a6fb0', margin: '0 0 10px 0', fontSize: '1.3rem' }}>{companyName}</h3>
                 <div style={{ color: '#475569', fontSize: '0.95rem', lineHeight: '1.8' }}>
-                    <p style={{ margin: 0 }}><i className="fas fa-map-marker-alt" style={{ width: '20px' }}></i> P.O BOX 360-10300, KERUGOYA</p>
-                    <p style={{ margin: 0 }}><i className="fas fa-phone-alt" style={{ width: '20px' }}></i> Official Tel: 0746555368 | Customer Care: 0715413591</p>
-                    <p style={{ margin: 0 }}><i className="fas fa-envelope" style={{ width: '20px' }}></i> managingdirector@kicowasco.co.ke | info@kicowasco.co.ke</p>
-                    <p style={{ margin: 0 }}><i className="fas fa-globe" style={{ width: '20px' }}></i> www.kicowasco.co.ke</p>
+                    <p style={{ margin: 0 }}><i className="fas fa-map-marker-alt" style={{ width: '20px' }}></i> {companyAddress}</p>
+                    <p style={{ margin: 0 }}><i className="fas fa-phone-alt" style={{ width: '20px' }}></i> {companyPhone}</p>
+                    <p style={{ margin: 0 }}><i className="fas fa-envelope" style={{ width: '20px' }}></i> {companyEmail}</p>
+                    <p style={{ margin: 0 }}><i className="fas fa-globe" style={{ width: '20px' }}></i> {companyWebsite}</p>
                 </div>
             </div>
         </div>

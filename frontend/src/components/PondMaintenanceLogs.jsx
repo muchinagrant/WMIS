@@ -54,7 +54,10 @@ const PondMaintenanceLogs = () => {
 
     // ── Fetchers ──────────────────────────────────────────────────────────────
     const fetchPonds = useCallback(async () => {
-        try { const r = await api.get('/api/ponds/'); setPonds(r.data); } catch {}
+        try {
+            const r = await api.get('/api/ponds/');
+            setPonds(Array.isArray(r.data) ? r.data : (r.data?.results || []));
+        } catch {}
     }, []);
 
     const fetchLogs = useCallback(async () => {
@@ -63,7 +66,7 @@ const PondMaintenanceLogs = () => {
             const params = { year: selYear, month: selMonth };
             if (selPond) params.pond = selPond;
             const r = await api.get('/api/pond-logs/', { params });
-            setLogs(r.data);
+            setLogs(Array.isArray(r.data) ? r.data : (r.data?.results || []));
         } catch { setActionMsg({ type: 'error', text: 'Failed to load logs.' }); }
         finally { setLoading(false); }
     }, [selYear, selMonth, selPond]);
@@ -73,7 +76,7 @@ const PondMaintenanceLogs = () => {
             const params = { year: selYear };
             if (selPond) params.pond = selPond;
             const r = await api.get('/api/pond-tasks/', { params });
-            setTasks(r.data);
+            setTasks(Array.isArray(r.data) ? r.data : (r.data?.results || []));
         } catch {}
     }, [selYear, selPond]);
 
@@ -354,7 +357,7 @@ const PondMaintenanceLogs = () => {
                                                                 <i className="fas fa-check-double"></i> Verify
                                                             </button>
                                                         )}
-                                                        {canEscalate && !log.incident_created && (log.surface_scum || log.odour_complaint || log.do_level < 0.5) && (
+                                                        {canEscalate && !log.incident_created && (log.surface_scum || log.odour_complaint || (log.do_level !== null && Number(log.do_level) < 0.5)) && (
                                                             <button onClick={()=>{ setEscalateModal(log); setEscDesc(''); }} style={actionBtnStyle('#fee2e2','#991b1b')} title="Escalate to incident">
                                                                 <i className="fas fa-exclamation-triangle"></i>
                                                             </button>

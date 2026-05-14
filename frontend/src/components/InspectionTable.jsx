@@ -55,7 +55,10 @@ const InspectionTable = () => {
             try {
                 const response = await api.get('/api/sewer-line-sections/');
                 if (isActive) {
-                    setSections(Array.isArray(response.data) ? response.data : []);
+                    const sectionRows = Array.isArray(response.data)
+                        ? response.data
+                        : (response.data?.results || []);
+                    setSections(sectionRows);
                 }
             } catch (error) {
                 if (isActive) {

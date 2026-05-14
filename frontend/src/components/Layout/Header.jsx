@@ -5,12 +5,13 @@ import './Layout.css';
 const Header = () => {
     // Bring in user state and logout function from context
     const { user, logoutUser } = useContext(AuthContext);
+    const companyName = user?.company_name || 'Kirinyaga County Water & Sanitation PLC';
 
     return (
         <>
             <header className="kicowasco-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '15px' }}>
                 <div style={{ textAlign: 'left' }}>
-                    <h1 style={{ fontSize: '1.5rem', margin: 0, color: '#ffffff' }}>Kirinyaga County Water & Sanitation PLC</h1>
+                    <h1 style={{ fontSize: '1.5rem', margin: 0, color: '#ffffff' }}>{companyName}</h1>
                     <p className="subtitle" style={{ margin: 0, opacity: 0.9, color: '#e0f2fe' }}>Integrated Wastewater Management System</p>
                 </div>
 

@@ -3,7 +3,7 @@ import { NavLink } from 'react-router-dom';
 import AuthContext from '../../context/AuthContext';
 import './Layout.css';
 
-const TabNavigation = () => {
+const TabNavigation = ({ orientation = 'horizontal' }) => {
     const { user } = useContext(AuthContext);
     const userRole = user?.role || 'line_attendant';
 
@@ -24,9 +24,10 @@ const TabNavigation = () => {
     };
 
     const hasAccess = (tab) => permissions[tab].includes(userRole);
+    const navClass = orientation === 'vertical' ? 'nav-tabs vertical' : 'nav-tabs';
 
     return (
-        <div className="nav-tabs">
+        <div className={navClass}>
             {hasAccess('incidence') && (
                 <NavLink to="/incidence" className={({ isActive }) => isActive ? 'tab active' : 'tab'}>
                     <i className="fas fa-exclamation-circle"></i> Incidence
