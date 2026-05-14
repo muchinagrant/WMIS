@@ -64,15 +64,9 @@ class IncidentViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         qs = super().get_queryset()
-        company = getattr(self.request.user, 'company', None)
-        if not company:
-            return qs
-        return qs.filter(
-            Q(created_by__company=company) |
-            Q(assigned_to__company=company) |
-            Q(received_by__company=company) |
-            Q(foreman_signed_by__company=company)
-        ).distinct()
+        # For single-company deployments, bypass company filtering
+        # TODO: Re-enable multi-company isolation when needed
+        return qs
 
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user)
@@ -354,7 +348,9 @@ class PatrolRowViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         qs = super().get_queryset()
-        return _scope_queryset_by_company(qs, self.request.user, 'weekly_patrol__attendant')
+        # For single-company deployments, bypass company filtering
+        # TODO: Re-enable multi-company isolation when needed
+        return qs
 
     @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated, IsLineSupervisorOrAbove])
     def escalate(self, request, pk=None):
@@ -408,7 +404,9 @@ class WeeklyLinePatrolViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         qs = super().get_queryset()
-        return _scope_queryset_by_company(qs, self.request.user, 'attendant')
+        # For single-company deployments, bypass company filtering
+        # TODO: Re-enable multi-company isolation when needed
+        return qs.order_by('-date')
 
     @action(detail=True, methods=['patch'], permission_classes=[IsAuthenticated, IsLineSupervisorOrAbove])
     def verify(self, request, pk=None):
@@ -487,8 +485,9 @@ class DailyLabRecordViewSet(LockEnforcementMixin, viewsets.ModelViewSet):
     lock_error_message = 'Lab record already verified and locked.'
 
     def get_queryset(self):
+        # For single-company deployments, bypass company filtering
+        # TODO: Re-enable multi-company isolation when needed
         qs = DailyLabRecord.objects.all()
-        qs = _scope_queryset_by_company(qs, self.request.user, 'attendant')
         year = self.request.query_params.get('year')
         month = self.request.query_params.get('month')
         if year:
@@ -548,11 +547,9 @@ class UserViewSet(viewsets.ReadOnlyModelViewSet):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        qs = super().get_queryset()
-        company = getattr(self.request.user, 'company', None)
-        if not company:
-            return qs
-        return qs.filter(company=company)
+        # For single-company deployments, bypass company filtering
+        # TODO: Re-enable multi-company isolation when needed
+        return super().get_queryset()
 
 
 # --- ATTACHMENT VIEWSET ---
@@ -594,7 +591,8 @@ class PondDailyLogViewSet(LockEnforcementMixin, viewsets.ModelViewSet):
 
     def get_queryset(self):
         qs = PondDailyLog.objects.select_related('pond', 'submitted_by', 'cosigned_by', 'verified_by').all()
-        qs = _scope_queryset_by_company(qs, self.request.user, 'submitted_by')
+        # For single-company deployments, bypass company filtering
+        # TODO: Re-enable multi-company isolation when needed
         year  = self.request.query_params.get('year')
         month = self.request.query_params.get('month')
         pond  = self.request.query_params.get('pond')
@@ -684,34 +682,18 @@ class SummaryViewSet(APIView):
         """Live aggregation of all metrics for the given year/month."""
         month_name = calendar.month_name[month]
 
-        company = getattr(user, 'company', None) if user else None
+        # For single-company deployments, bypass company filtering
+        # TODO: Re-enable multi-company isolation when needed
 
         incidents = Incident.objects.filter(reported_at__year=year, reported_at__month=month)
-        if company:
-            incidents = incidents.filter(
-                Q(created_by__company=company) |
-                Q(assigned_to__company=company) |
-                Q(received_by__company=company) |
-                Q(foreman_signed_by__company=company)
-            ).distinct()
 
         patrol_rows = PatrolRow.objects.filter(weekly_patrol__date__year=year, weekly_patrol__date__month=month)
-        if company:
-            patrol_rows = patrol_rows.filter(weekly_patrol__attendant__company=company)
 
         new_mother = patrol_rows.aggregate(Sum('new_mother_connections'))['new_mother_connections__sum'] or 0
         new_child = patrol_rows.aggregate(Sum('new_child_connections'))['new_child_connections__sum'] or 0
         repairs_completed = Repair.objects.filter(completion_date__year=year, completion_date__month=month).count()
-        if company:
-            repairs_completed = Repair.objects.filter(
-                completion_date__year=year,
-                completion_date__month=month,
-                technician__company=company,
-            ).count()
 
         lab_qs = DailyLabRecord.objects.filter(record_date__year=year, record_date__month=month)
-        if company:
-            lab_qs = lab_qs.filter(attendant__company=company)
 
         bod_exceedance_days = sum(1 for r in lab_qs if r.is_bod_exceedance)
         tss_exceedance_days = sum(1 for r in lab_qs if r.is_tss_exceedance)
@@ -721,8 +703,6 @@ class SummaryViewSet(APIView):
         avg_tss = round(sum(tss_vals) / len(tss_vals), 1) if tss_vals else None
 
         collections = SludgeCollection.objects.filter(collection_date__year=year, collection_date__month=month)
-        if company:
-            collections = collections.filter(received_by__company=company)
 
         total_volume = collections.aggregate(Sum('volume_m3'))['volume_m3__sum'] or 0
         res_vol = collections.filter(source_type='residential').aggregate(Sum('volume_m3'))['volume_m3__sum'] or 0

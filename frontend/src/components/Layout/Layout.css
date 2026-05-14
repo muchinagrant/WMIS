@@ -1,51 +1,78 @@
-.inspection-shell {
-	display: flex;
-	align-items: flex-start;
-	min-height: 600px;
+/* Global Layout with Side Navigation */
+.global-layout-shell {
+    display: flex;
+    align-items: flex-start;
+    gap: 0;
+    padding: 20px;
+    background-color: #f1f5f9;
+    min-height: calc(100vh - 200px);
 }
 
-.inspection-sidebar {
-	width: 260px;
-	flex: 0 0 260px;
-	border-right: 1px solid #e2e8f0;
-	background: #ffffff;
+.global-sidebar {
+    width: 260px;
+    flex: 0 0 260px;
+    background: #ffffff;
+    border-radius: 12px;
+    border: 1px solid #e2e8f0;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+    height: fit-content;
+    position: sticky;
+    top: 20px;
 }
 
-.inspection-content {
-	flex: 1;
+.content-wrapper {
+    flex: 1;
+    display: flex;
+    justify-content: center;
 }
 
 .nav-tabs.vertical {
-	display: flex !important;
-	flex-direction: column !important;
-	gap: 0 !important;
-	padding: 12px !important;
-	border-bottom: none !important;
-	overflow-x: visible !important;
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 0 !important;
+    padding: 12px !important;
+    border-bottom: none !important;
+    overflow-x: visible !important;
+    background: transparent !important;
+    border: none !important;
 }
 
 .nav-tabs.vertical .tab {
-	border-radius: 8px !important;
-	margin-bottom: 4px !important;
-	border-bottom: none !important;
-	padding: 12px 14px !important;
+    border-radius: 6px !important;
+    margin-bottom: 4px !important;
+    border-bottom: none !important;
+    padding: 12px 14px !important;
+    color: #64748b !important;
+    font-weight: 600 !important;
+    transition: all 0.2s ease !important;
+}
+
+.nav-tabs.vertical .tab:hover {
+    background: #f8fafc !important;
+    color: #0f172a !important;
 }
 
 .nav-tabs.vertical .tab.active {
-	border-bottom: none !important;
-	background: #eff6ff !important;
+    border-bottom: none !important;
+    background: #eff6ff !important;
+    color: #2563eb !important;
 }
 
 @media (max-width: 1024px) {
-	.inspection-shell {
-		display: block;
-	}
+    .global-layout-shell {
+        display: block;
+        padding: 12px;
+    }
 
-	.inspection-sidebar {
-		width: auto;
-		flex: none;
-		border-right: none;
-		border-bottom: 1px solid #e2e8f0;
+    .global-sidebar {
+        width: 100%;
+        flex: none;
+        margin-bottom: 20px;
+        position: static;
+    }
+
+    .content-wrapper {
+        width: 100%;
 	}
 
 	.nav-tabs.vertical {
