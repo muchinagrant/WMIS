@@ -1,0 +1,84 @@
+================================================================================
+KICOWASCO - QUICK START GUIDE
+================================================================================
+
+PROBLEM FIXED:
+- "Failed to load live data" errors
+- "Failed to load executive summary" errors
+- Missing seed data in database
+
+SOLUTION IN 3 STEPS:
+================================================================================
+
+STEP 1: Install Dependencies
+----------------------------
+pip install -r requirements.txt
+
+(This installs the newly added 'faker' library needed for seed data)
+
+
+STEP 2: Run Automated Setup
+---------------------------
+python setup_and_seed.py
+
+This script will:
+✓ Run database migrations
+✓ Create admin user (admin/admin123)
+✓ Seed 90 days of operational data
+
+
+STEP 3: Verify Everything Works
+-------------------------------
+python verify_setup.py
+
+Should show:
+✓ Companies................ 1
+✓ Users.................... 6
+✓ Incidents................ 90+
+✓ Lab Records.............. 90+
+✓ Sludge Collections....... 180+
+✓ Weekly Patrols........... 90+
+✓ Pond Logs................ 180+
+✓ Treatment Logs........... 90+
+
+
+THEN START THE SERVER:
+=====================
+python kicowasco/manage.py runserver
+
+Visit:
+- Dispatch Board: http://localhost:8000/dashboard/dispatch
+- Executive Summary: http://localhost:8000/dashboard/summary
+- API: http://localhost:8000/api/incidents/
+
+
+TEST CREDENTIALS:
+================
+Admin User:
+  Username: admin
+  Password: admin123
+
+Seeded Users:
+  Username: Sarah (Superintendent)
+  Password: kicowasco123
+
+  Username: Peter (Supervisor)
+  Password: kicowasco123
+
+  Username: Kevin (Technician)
+  Password: kicowasco123
+
+
+IF SOMETHING GOES WRONG:
+=======================
+1. Check database connection in .env file
+2. Run: python verify_setup.py
+3. Check logs for errors
+4. Run: python kicowasco/manage.py migrate
+5. Run: python kicowasco/manage.py seed_db
+
+For detailed help, see:
+- DATABASE_SETUP.md - Complete setup guide
+- FINAL_FIX_SUMMARY.md - Technical details
+
+================================================================================

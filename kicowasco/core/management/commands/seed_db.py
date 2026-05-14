@@ -229,17 +229,19 @@ class Command(BaseCommand):
 
             # D. Daily Lab Record
             if not DailyLabRecord.objects.filter(record_date=sim_date).exists():
+                inflow_bod_val = round(random.uniform(150, 320), 2) if day_offset % 3 == 0 else None
+                effluent_bod_val = round(random.uniform(8, 40), 2) if day_offset % 3 == 0 else None
                 DailyLabRecord.objects.create(
                     record_date=sim_date,
-                    attendant=users_dict.get('Kevin'),
+                    attendant=users_dict.get('Alice'),
                     inflow_ph=round(random.uniform(6.5, 8.5), 2),
                     inflow_temperature=round(random.uniform(20.0, 30.0), 2),
                     inflow_tss=round(random.uniform(180, 350), 2),
-                    inflow_bod=round(random.uniform(150, 320), 2) if day_offset % 3 == 0 else None,
+                    inflow_bod=inflow_bod_val,
                     effluent_ph=round(random.uniform(6.8, 7.8), 2),
                     effluent_temperature=round(random.uniform(19.0, 27.0), 2),
                     effluent_tss=round(random.uniform(10, 45), 2),
-                    effluent_bod=round(random.uniform(8, 40), 2) if day_offset % 3 == 0 else None,
+                    effluent_bod=effluent_bod_val,
                     effluent_turbidity=round(random.uniform(2.0, 8.0), 2),
                     effluent_chlorine=round(random.uniform(0.5, 3.5), 2),
                     effluent_do=round(random.uniform(4.0, 8.0), 2),
