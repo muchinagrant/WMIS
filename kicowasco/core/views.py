@@ -511,7 +511,7 @@ class InspectionViewSet(viewsets.ModelViewSet):
         queryset = super().get_queryset()
         user = self.request.user
         
-        if user.role in ['line_attendant', 'sewer_line_officer']:
+        if user.role == 'line_attendant':
             queryset = queryset.filter(inspector=user)
         
         start_date = self.request.query_params.get('start_date', None)

@@ -44,7 +44,6 @@ const InspectionTable = () => {
     const [submittedPatrol, setSubmittedPatrol] = useState(null);
     const { isOnline, refreshQueueCount } = useContext(SyncContext);
     const { user } = useContext(AuthContext);
-    const isReadOnly = user?.role === 'sewer_line_officer';
     const userRole = user?.role || '';
     const canEscalate = ['admin','stp_superintendent','line_supervisor'].includes(userRole);
 
@@ -201,12 +200,6 @@ const InspectionTable = () => {
                     </div>
                 </div>
             )}
-            {isReadOnly && (
-                <div style={{ padding: '15px', marginBottom: '20px', borderRadius: '6px', backgroundColor: '#fff7ed', color: '#9a3412', border: '1px solid #fdba74' }}>
-                    Read-only access: sewer line officers cannot submit patrol records.
-                </div>
-            )}
-
             <Formik
                 initialValues={{
                     date: new Date().toISOString().split('T')[0],
@@ -221,12 +214,12 @@ const InspectionTable = () => {
                         <div className="grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '20px' }}>
                             <div className="form-group">
                                 <label style={{ fontWeight: 'bold' }}>Date</label>
-                                <Field disabled={isReadOnly} type="date" name="date" style={{ width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid #cbd5e1' }} />
+                                <Field type="date" name="date" style={{ width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid #cbd5e1' }} />
                                 {touched.date && errors.date && <div style={{ color: '#b91c1c', marginTop: '6px' }}>{errors.date}</div>}
                             </div>
                             <div className="form-group">
                                 <label style={{ fontWeight: 'bold' }}>Drainage Area / Estate</label>
-                                <Field disabled={isReadOnly} type="text" name="drainage_area" placeholder="e.g. Kerugoya Central" style={{ width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid #cbd5e1' }} />
+                                <Field type="text" name="drainage_area" placeholder="e.g. Kerugoya Central" style={{ width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid #cbd5e1' }} />
                                 {touched.drainage_area && errors.drainage_area && <div style={{ color: '#b91c1c', marginTop: '6px' }}>{errors.drainage_area}</div>}
                             </div>
                         </div>
@@ -247,7 +240,7 @@ const InspectionTable = () => {
                                                 <div key={index} style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '16px', background: '#fff' }}>
                                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
                                                         <strong style={{ color: '#0f172a' }}>Row {index + 1}</strong>
-                                                        {!isReadOnly && values.rows.length > 1 && (
+                                                        {values.rows.length > 1 && (
                                                             <button
                                                                 type="button"
                                                                 onClick={() => remove(index)}
@@ -261,16 +254,15 @@ const InspectionTable = () => {
                                                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '16px' }}>
                                                         <div className="form-group">
                                                             <label style={{ fontWeight: 'bold' }}>Time</label>
-                                                            <Field disabled={isReadOnly} type="time" name={`rows.${index}.time`} style={{ width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid #cbd5e1' }} />
+                                                            <Field type="time" name={`rows.${index}.time`} style={{ width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid #cbd5e1' }} />
                                                         </div>
                                                         <div className="form-group">
                                                             <label style={{ fontWeight: 'bold' }}>Sewer Line Ref Text</label>
-                                                            <Field disabled={isReadOnly} type="text" name={`rows.${index}.sewer_line_ref_text`} placeholder="e.g. SL-104" style={{ width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid #cbd5e1' }} />
+                                                            <Field type="text" name={`rows.${index}.sewer_line_ref_text`} placeholder="e.g. SL-104" style={{ width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid #cbd5e1' }} />
                                                         </div>
                                                         <div className="form-group" style={{ position: 'relative' }}>
                                                             <label style={{ fontWeight: 'bold' }}>Sewer Line Section</label>
                                                             <input
-                                                                disabled={isReadOnly}
                                                                 type="text"
                                                                 value={row.sectionSearch || (selectedSection?.code || '')}
                                                                 onChange={(event) => {
@@ -286,7 +278,7 @@ const InspectionTable = () => {
                                                                     Selected: {selectedSection.code} {selectedSection.is_confirmed ? '(confirmed)' : '(unconfirmed)'}
                                                                 </div>
                                                             )}
-                                                            {!isReadOnly && searchText && filteredSections.length > 0 && (
+                                                            {searchText && filteredSections.length > 0 && (
                                                                 <div style={{ position: 'absolute', zIndex: 10, top: '100%', left: 0, right: 0, background: '#fff', border: '1px solid #cbd5e1', borderRadius: '0 0 8px 8px', boxShadow: '0 10px 30px rgba(15, 23, 42, 0.12)' }}>
                                                                     {filteredSections.map((section) => (
                                                                         <button
@@ -315,7 +307,7 @@ const InspectionTable = () => {
                                                         </div>
                                                         <div className="form-group">
                                                             <label style={{ fontWeight: 'bold' }}>Abnormality Observed</label>
-                                                            <Field disabled={isReadOnly} as="select" name={`rows.${index}.abnormality_observed`} style={{ width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid #cbd5e1' }}>
+                                                            <Field as="select" name={`rows.${index}.abnormality_observed`} style={{ width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid #cbd5e1' }}>
                                                                 <option value="none">None (Line Clear)</option>
                                                                 <option value="erosion">Erosion along lines</option>
                                                                 <option value="missing_cover">Broken/Missing Manhole Cover</option>
@@ -326,38 +318,36 @@ const InspectionTable = () => {
                                                         </div>
                                                         <div className="form-group">
                                                             <label style={{ fontWeight: 'bold' }}>Abnormality Details</label>
-                                                            <Field disabled={isReadOnly} type="text" name={`rows.${index}.abnormality_details`} placeholder="Specify details..." style={{ width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid #cbd5e1' }} />
+                                                            <Field type="text" name={`rows.${index}.abnormality_details`} placeholder="Specify details..." style={{ width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid #cbd5e1' }} />
                                                         </div>
                                                         <div className="form-group">
                                                             <label style={{ fontWeight: 'bold' }}>New Mother Connections</label>
-                                                            <Field disabled={isReadOnly} type="number" min="0" name={`rows.${index}.new_mother_connections`} style={{ width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid #cbd5e1' }} />
+                                                            <Field type="number" min="0" name={`rows.${index}.new_mother_connections`} style={{ width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid #cbd5e1' }} />
                                                         </div>
                                                         <div className="form-group">
                                                             <label style={{ fontWeight: 'bold' }}>New Child Connections</label>
-                                                            <Field disabled={isReadOnly} type="number" min="0" name={`rows.${index}.new_child_connections`} style={{ width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid #cbd5e1' }} />
+                                                            <Field type="number" min="0" name={`rows.${index}.new_child_connections`} style={{ width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid #cbd5e1' }} />
                                                         </div>
                                                         <div className="form-group" style={{ gridColumn: '1 / -1' }}>
                                                             <label style={{ fontWeight: 'bold' }}>Immediate Action Taken</label>
-                                                            <Field disabled={isReadOnly} as="textarea" name={`rows.${index}.immediate_action_taken`} placeholder="What was done on site?" style={{ width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid #cbd5e1', minHeight: '60px' }} />
+                                                            <Field as="textarea" name={`rows.${index}.immediate_action_taken`} placeholder="What was done on site?" style={{ width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid #cbd5e1', minHeight: '60px' }} />
                                                         </div>
                                                         <div className="form-group" style={{ gridColumn: '1 / -1' }}>
                                                             <label style={{ fontWeight: 'bold' }}>Further Action Required</label>
-                                                            <Field disabled={isReadOnly} as="textarea" name={`rows.${index}.further_action_required`} placeholder="Any follow-up needed?" style={{ width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid #cbd5e1', minHeight: '60px' }} />
+                                                            <Field as="textarea" name={`rows.${index}.further_action_required`} placeholder="Any follow-up needed?" style={{ width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid #cbd5e1', minHeight: '60px' }} />
                                                         </div>
                                                     </div>
                                                 </div>
                                             );
                                         })}
 
-                                        {!isReadOnly && (
-                                            <button
-                                                type="button"
-                                                onClick={() => push(createRow())}
-                                                style={{ width: 'fit-content', background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe', padding: '10px 14px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}
-                                            >
-                                                + Add Patrol Row
-                                            </button>
-                                        )}
+                                        <button
+                                            type="button"
+                                            onClick={() => push(createRow())}
+                                            style={{ width: 'fit-content', background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe', padding: '10px 14px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}
+                                        >
+                                            + Add Patrol Row
+                                        </button>
                                     </div>
                                 )}
                             </FieldArray>
@@ -365,8 +355,8 @@ const InspectionTable = () => {
 
                         <button
                             type="submit"
-                            disabled={isSubmitting || isReadOnly}
-                            style={{ background: '#1a6fb0', color: 'white', border: 'none', padding: '12px 25px', borderRadius: '6px', cursor: isSubmitting || isReadOnly ? 'not-allowed' : 'pointer', fontWeight: 'bold', opacity: isSubmitting || isReadOnly ? 0.6 : 1 }}
+                            disabled={isSubmitting}
+                            style={{ background: '#1a6fb0', color: 'white', border: 'none', padding: '12px 25px', borderRadius: '6px', cursor: isSubmitting ? 'not-allowed' : 'pointer', fontWeight: 'bold', opacity: isSubmitting ? 0.6 : 1 }}
                         >
                             <i className="fas fa-save"></i> Save Patrol Log
                         </button>

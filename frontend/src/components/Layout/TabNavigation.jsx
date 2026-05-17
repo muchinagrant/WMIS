@@ -8,19 +8,19 @@ const TabNavigation = ({ orientation = 'horizontal' }) => {
     const userRole = user?.role || 'line_attendant';
 
     const permissions = {
-        profile: ['admin', 'stp_superintendent', 'stp_supervisor', 'lab_tech', 'stp_operator', 'line_supervisor', 'line_attendant', 'sewer_line_officer'],
-        incidence: ['admin', 'stp_superintendent', 'line_supervisor', 'line_attendant', 'sewer_line_officer'],
-        repairs: ['admin', 'stp_superintendent', 'line_supervisor', 'line_attendant'],
-        inspection: ['admin', 'stp_superintendent', 'line_supervisor', 'line_attendant', 'sewer_line_officer'],
-        treatment: ['admin', 'stp_superintendent', 'stp_supervisor', 'stp_operator'],
-        inlet_works: ['admin', 'stp_superintendent', 'stp_supervisor', 'stp_operator'],
-        flow_records: ['admin', 'stp_superintendent', 'stp_supervisor', 'stp_operator'],
-        sludge: ['admin', 'stp_superintendent', 'stp_supervisor', 'stp_operator'],
-        connections: ['admin', 'stp_superintendent', 'line_supervisor', 'sewer_line_officer'],
-        dispatch: ['admin', 'stp_superintendent', 'line_supervisor', 'line_attendant'],
-        lab_records: ['admin', 'stp_superintendent', 'stp_supervisor', 'lab_tech'],
-        pond_ops: ['admin', 'stp_superintendent', 'stp_supervisor', 'stp_operator'],
-        summary: ['admin', 'stp_superintendent']
+        profile: ['admin', 'stp_superintendent', 'stp_supervisor', 'lab_tech', 'stp_operator', 'stp_attendant', 'line_supervisor', 'line_attendant'],
+        incidence: ['line_supervisor', 'line_attendant'],
+        repairs: ['line_supervisor', 'line_attendant'],
+        inspection: ['line_supervisor', 'line_attendant'],
+        treatment: ['stp_supervisor', 'stp_operator', 'stp_attendant'],
+        inlet_works: ['stp_supervisor', 'stp_operator', 'stp_attendant'],
+        flow_records: ['stp_supervisor', 'stp_operator', 'stp_attendant'],
+        sludge: ['stp_supervisor', 'stp_operator', 'stp_attendant'],
+        connections: ['line_supervisor', 'line_attendant'],
+        dispatch: ['line_supervisor', 'line_attendant'],
+        lab_records: ['stp_supervisor', 'lab_tech'],
+        pond_ops: ['stp_supervisor', 'stp_operator', 'stp_attendant'],
+        summary: ['admin', 'stp_superintendent', 'stp_supervisor']
     };
 
     const hasAccess = (tab) => permissions[tab].includes(userRole);

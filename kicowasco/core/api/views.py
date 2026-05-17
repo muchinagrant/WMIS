@@ -20,8 +20,8 @@ from core.models import (
     InletWorksDailyTask, DailyFlowRecord, TreatmentParameter, DailyLabRecord,
     MonthlySummarySnapshot, TreatmentPond, PondDailyLog, PondYearlyTask,
 )
-from core.permissions import IsLineSupervisorOrAbove, IsSTPOperatorOrAbove, IsSTPSupervisorOrAbove, IsSTPSuperintendent
-from core.api.mixins import LockEnforcementMixin
+from core.permissions import IsLineSupervisorOrAbove, IsSTPOperatorOrAbove, IsSTPSupervisorOrAbove
+from core.api.mixins import LockEnforcementMixin, ExecutiveReadOnlyMixin
 from .serializers import (
     IncidentSerializer, RepairSerializer, InspectionSerializer,
     TreatmentLogSerializer, ExhausterSerializer, ExhausterLicenseSerializer,
@@ -57,7 +57,7 @@ def _scope_queryset_by_company(qs, user, path):
         return qs
     return qs.filter(**_company_filter_kwargs(path, company))
 
-class IncidentViewSet(viewsets.ModelViewSet):
+class IncidentViewSet(ExecutiveReadOnlyMixin, viewsets.ModelViewSet):
     queryset = Incident.objects.all().order_by('-reported_at')
     serializer_class = IncidentSerializer
     permission_classes = [IsAuthenticated]
@@ -181,7 +181,7 @@ class IncidentViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(incident)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
-class RepairViewSet(LockEnforcementMixin, viewsets.ModelViewSet):
+class RepairViewSet(LockEnforcementMixin, ExecutiveReadOnlyMixin, viewsets.ModelViewSet):
     queryset = Repair.objects.all().order_by('-created_at')
     serializer_class = RepairSerializer
     permission_classes = [IsAuthenticated]
@@ -257,22 +257,22 @@ class RepairViewSet(LockEnforcementMixin, viewsets.ModelViewSet):
             repair.incident.save()
         return Response(self.get_serializer(repair).data)
 
-class InspectionViewSet(viewsets.ModelViewSet):
+class InspectionViewSet(ExecutiveReadOnlyMixin, viewsets.ModelViewSet):
     queryset = Inspection.objects.all().order_by('-start_date')
     serializer_class = InspectionSerializer
     permission_classes = [IsAuthenticated]
 
-class TreatmentLogViewSet(viewsets.ModelViewSet):
+class TreatmentLogViewSet(ExecutiveReadOnlyMixin, viewsets.ModelViewSet):
     queryset = TreatmentLog.objects.all().order_by('-report_date')
     serializer_class = TreatmentLogSerializer
     permission_classes = [IsAuthenticated]
 
-class ExhausterViewSet(viewsets.ModelViewSet):
+class ExhausterViewSet(ExecutiveReadOnlyMixin, viewsets.ModelViewSet):
     queryset = Exhauster.objects.all().order_by('reg_no')
     serializer_class = ExhausterSerializer
     permission_classes = [IsAuthenticated]
 
-class ExhausterLicenseViewSet(viewsets.ModelViewSet):
+class ExhausterLicenseViewSet(ExecutiveReadOnlyMixin, viewsets.ModelViewSet):
     queryset = ExhausterLicense.objects.all().order_by('-end_date')
     serializer_class = ExhausterLicenseSerializer
     permission_classes = [IsAuthenticated]
@@ -281,7 +281,7 @@ class ExhausterLicenseViewSet(viewsets.ModelViewSet):
 LicenseViewSet = ExhausterLicenseViewSet
 
 
-class SludgeCollectionViewSet(viewsets.ModelViewSet):
+class SludgeCollectionViewSet(ExecutiveReadOnlyMixin, viewsets.ModelViewSet):
     queryset = SludgeCollection.objects.all().order_by('-collection_date')
     serializer_class = SludgeCollectionSerializer
     permission_classes = [IsAuthenticated]
@@ -321,7 +321,7 @@ class SludgeCollectionViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(manifest)
         return Response(serializer.data)
 
-class ConnectionReportViewSet(viewsets.ModelViewSet):
+class ConnectionReportViewSet(ExecutiveReadOnlyMixin, viewsets.ModelViewSet):
     queryset = ConnectionReport.objects.all().order_by('-start_date')
     serializer_class = ConnectionReportSerializer
     permission_classes = [IsAuthenticated]
@@ -338,7 +338,7 @@ class SewerLineSectionViewSet(viewsets.ReadOnlyModelViewSet):
     permission_classes = [IsAuthenticated]
 
 
-class PatrolRowViewSet(viewsets.ModelViewSet):
+class PatrolRowViewSet(ExecutiveReadOnlyMixin, viewsets.ModelViewSet):
     """
     Endpoint for individual F201 patrol row entries with escalation support.
     """
@@ -394,7 +394,7 @@ class PatrolRowViewSet(viewsets.ModelViewSet):
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
 
-class WeeklyLinePatrolViewSet(viewsets.ModelViewSet):
+class WeeklyLinePatrolViewSet(ExecutiveReadOnlyMixin, viewsets.ModelViewSet):
     """
     [cite_start]Endpoint for F201 Sewer Lines Weekly Tasks Record Sheet. [cite: 205]
     """
@@ -423,7 +423,7 @@ class WeeklyLinePatrolViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(patrol)
         return Response(serializer.data)
 
-class InletWorksDailyTaskViewSet(LockEnforcementMixin, viewsets.ModelViewSet):
+class InletWorksDailyTaskViewSet(LockEnforcementMixin, ExecutiveReadOnlyMixin, viewsets.ModelViewSet):
     """
     [cite_start]Endpoint for F203A Inlet Works Screens & Grit Removal. [cite: 218]
     """
@@ -474,7 +474,7 @@ class InletWorksDailyTaskViewSet(LockEnforcementMixin, viewsets.ModelViewSet):
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
 
-class DailyLabRecordViewSet(LockEnforcementMixin, viewsets.ModelViewSet):
+class DailyLabRecordViewSet(LockEnforcementMixin, ExecutiveReadOnlyMixin, viewsets.ModelViewSet):
     """
     F203B: Daily Lab Record with partial-entry support (PATCH preserves nulls)
     and supervisor verification workflow.
@@ -511,7 +511,7 @@ class DailyLabRecordViewSet(LockEnforcementMixin, viewsets.ModelViewSet):
         return Response(self.get_serializer(record).data)
 
 
-class DailyFlowRecordViewSet(viewsets.ModelViewSet):
+class DailyFlowRecordViewSet(ExecutiveReadOnlyMixin, viewsets.ModelViewSet):
     """
     [cite_start]Endpoint for F203C Inlet Works Flow Measurement Task Record. [cite: 190]
     """
@@ -554,7 +554,7 @@ class UserViewSet(viewsets.ReadOnlyModelViewSet):
 
 # --- ATTACHMENT VIEWSET ---
 
-class AttachmentViewSet(viewsets.ModelViewSet):
+class AttachmentViewSet(ExecutiveReadOnlyMixin, viewsets.ModelViewSet):
     """
     API endpoint for uploading and managing attachments (photos, documents, etc.)
     for incidents, repairs, and other entities.
@@ -579,7 +579,7 @@ class TreatmentPondViewSet(viewsets.ReadOnlyModelViewSet):
     permission_classes = [IsAuthenticated]
 
 
-class PondDailyLogViewSet(LockEnforcementMixin, viewsets.ModelViewSet):
+class PondDailyLogViewSet(LockEnforcementMixin, ExecutiveReadOnlyMixin, viewsets.ModelViewSet):
     """
     Daily pond observation log with 3-level sign-off:
       submitted → cosigned_op → verified
@@ -660,7 +660,7 @@ class PondDailyLogViewSet(LockEnforcementMixin, viewsets.ModelViewSet):
         return Response(self.get_serializer(log).data, status=status.HTTP_201_CREATED)
 
 
-class PondYearlyTaskViewSet(viewsets.ModelViewSet):
+class PondYearlyTaskViewSet(ExecutiveReadOnlyMixin, viewsets.ModelViewSet):
     serializer_class = PondYearlyTaskSerializer
     permission_classes = [IsAuthenticated]
 
@@ -824,9 +824,9 @@ class SummaryViewSet(APIView):
         return Response(real_data)
 
     def post(self, request):
-        """Lock a month's summary into an immutable snapshot (superintendent only)."""
-        if not IsSTPSuperintendent().has_permission(request, self):
-            return Response({'error': 'Only the STP Superintendent can lock a monthly summary.'}, status=status.HTTP_403_FORBIDDEN)
+        """Lock a month's summary into an immutable snapshot (supervisor workflow)."""
+        if getattr(request.user, 'role', '') != 'stp_supervisor':
+            return Response({'error': 'Only the STP Supervisor can lock a monthly summary.'}, status=status.HTTP_403_FORBIDDEN)
 
         year  = request.data.get('year')  or request.query_params.get('year')
         month = request.data.get('month') or request.query_params.get('month')

@@ -13,7 +13,7 @@ const MonthlySummary = () => {
 
     const { user } = useContext(AuthContext);
     const userRole = user?.role || '';
-    const canLock = ['admin', 'stp_superintendent'].includes(userRole);
+    const canLock = userRole === 'stp_supervisor';
     const [lockMsg, setLockMsg] = useState({ type: '', text: '' });
     const [locking, setLocking] = useState(false);
 

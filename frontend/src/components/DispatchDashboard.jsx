@@ -15,7 +15,7 @@ const DispatchDashboard = () => {
     const { user } = useContext(AuthContext);
     const userRole = user?.role || 'line_attendant';
     const canDispatchActions = ['admin', 'stp_superintendent', 'line_supervisor'].includes(userRole);
-    const isSupervisorView = canDispatchActions || userRole === 'sewer_line_officer';
+    const isSupervisorView = canDispatchActions;
 
     const fetchDashboardData = useCallback(async () => {
         setLoading(true);
@@ -134,9 +134,7 @@ const DispatchDashboard = () => {
                     <i className="fas fa-tasks"></i>
                     {canDispatchActions
                         ? 'Supervisor Dispatch Board'
-                        : userRole === 'sewer_line_officer'
-                            ? 'Dispatch Board (Read-Only)'
-                            : 'My Assigned Tasks'}
+                        : 'My Assigned Tasks'}
                 </span>
                 <button onClick={fetchDashboardData} style={{ background: 'none', border: '1px solid #1a6fb0', color: '#1a6fb0', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '0.9rem' }}>
                     <i className="fas fa-sync-alt"></i> Refresh

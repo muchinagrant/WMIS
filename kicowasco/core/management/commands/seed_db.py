@@ -52,6 +52,7 @@ class Command(BaseCommand):
             {"username": "Peter", "first_name": "Peter", "last_name": "Kamau", "role": "stp_supervisor"},
             {"username": "Alice", "first_name": "Alice", "last_name": "Muthoni", "role": "lab_tech"},
             {"username": "John", "first_name": "John", "last_name": "Musyoka", "role": "stp_operator"},
+            {"username": "Mary", "first_name": "Mary", "last_name": "Njeri", "role": "stp_attendant"},
             {"username": "Kevin", "first_name": "Kevin", "last_name": "Otieno", "role": "line_attendant"},
             {"username": "linespv", "first_name": "Line", "last_name": "Supervisor", "role": "line_supervisor"},
         ]
@@ -149,12 +150,12 @@ class Command(BaseCommand):
             if tlog is None:
                 tlog = TreatmentLog.objects.create(
                     report_date=sim_date,
-                    operator=users_dict["Alice"],
+                    operator=users_dict["John"],
                     shift="Day",
                     alert=not is_good_day,
                 )
             else:
-                tlog.operator = tlog.operator or users_dict["Alice"]
+                tlog.operator = tlog.operator or users_dict["John"]
                 tlog.shift = tlog.shift or "Day"
                 tlog.alert = not is_good_day
                 tlog.save()
@@ -217,7 +218,7 @@ class Command(BaseCommand):
                     PondDailyLog.objects.create(
                         pond=pond,
                         log_date=sim_date,
-                        submitted_by=users_dict.get('Kevin'),
+                        submitted_by=users_dict.get('Mary'),
                         ph=round(random.uniform(6.8, 7.8), 2),
                         temperature=round(random.uniform(20.0, 28.0), 2),
                         do_level=round(random.uniform(0.1, 1.5), 2),

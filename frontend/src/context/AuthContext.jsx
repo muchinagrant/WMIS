@@ -2,6 +2,7 @@ import React, { createContext, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { jwtDecode } from 'jwt-decode';
 import api from '../api/axios';
+import { getLandingRoute } from '../config/roleRouting';
 
 const AuthContext = createContext();
 
@@ -34,11 +35,12 @@ export const AuthProvider = ({ children }) => {
         try {
             const response = await api.post('/api/auth/token/', { username, password });
             const data = response.data;
+            const decoded = jwtDecode(data.access);
 
             setAuthTokens(data);
-            setUser(jwtDecode(data.access));
+            setUser(decoded);
             localStorage.setItem('authTokens', JSON.stringify(data));
-            navigate('/incidence');
+            navigate(getLandingRoute(decoded?.role));
 
             return { success: true };
         } catch (error) {

@@ -2,7 +2,7 @@ from rest_framework.permissions import BasePermission
 
 
 class IsSTPOperatorOrAbove(BasePermission):
-    allowed = ['stp_operator', 'stp_supervisor', 'stp_superintendent', 'admin']
+    allowed = ['stp_operator', 'stp_supervisor']
 
     def has_permission(self, request, view):
         return bool(
@@ -13,7 +13,7 @@ class IsSTPOperatorOrAbove(BasePermission):
 
 
 class IsSTPSupervisorOrAbove(BasePermission):
-    allowed = ['stp_supervisor', 'stp_superintendent', 'admin']
+    allowed = ['stp_supervisor']
 
     def has_permission(self, request, view):
         return bool(
@@ -35,8 +35,7 @@ class IsSTPSuperintendent(BasePermission):
 
 
 class IsLineSupervisorOrAbove(BasePermission):
-    # sewer_line_officer included for read contexts; frontend suppresses action buttons.
-    allowed = ['line_supervisor', 'sewer_line_officer', 'stp_superintendent', 'admin']
+    allowed = ['line_supervisor']
 
     def has_permission(self, request, view):
         return bool(

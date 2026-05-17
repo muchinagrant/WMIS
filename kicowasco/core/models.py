@@ -29,8 +29,8 @@ class User(AbstractUser):
         ('stp_supervisor', 'STP Supervisor (Grade 4)'),
         ('lab_tech', 'Lab Technologist (Grade 4)'),
         ('stp_operator', 'STP Operator (Grade 5)'),
+        ('stp_attendant', 'STP Attendant (Grade 6)'),
         ('line_supervisor', 'Line Supervisor (Grade 4)'),
-        ('sewer_line_officer', 'Sewer Line Officer'),
         ('line_attendant', 'Line Attendant / Plumber (Grade 6)'),
         ('admin', 'System Admin'),
     ]
