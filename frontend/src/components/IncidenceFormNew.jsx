@@ -34,6 +34,7 @@ const IncidenceForm = () => {
   const [submitStatus, setSubmitStatus] = useState({ type: '', message: '' });
   const [zones, setZones] = useState([]);
   const [relatedIncidents, setRelatedIncidents] = useState([]);
+  const [showIncidentSearch, setShowIncidentSearch] = useState(false);
   const [incidentSearchQuery, setIncidentSearchQuery] = useState('');
   const [mapPreview, setMapPreview] = useState(null);
   const [photoList, setPhotoList] = useState([]);

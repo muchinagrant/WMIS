@@ -19,6 +19,7 @@ const DispatchDashboardNew = () => {
     const [certificationModal, setCertificationModal] = useState(null);
     const [certNotes, setCertNotes] = useState('');
     const { user } = useContext(AuthContext);
+    const { addToQueue } = useContext(SyncContext);
 
     const priorityColors = {
         high: '#DC2626',

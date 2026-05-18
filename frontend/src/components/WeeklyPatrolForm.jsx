@@ -47,6 +47,7 @@ const WeeklyPatrolForm = () => {
     const [sewerLines, setSewerLines] = useState([]);
     const [submittedPatrol, setSubmittedPatrol] = useState(null);
     const [draftPatrol, setDraftPatrol] = useState(null);
+    const [currentZone, setCurrentZone] = useState(null);
     const { isOnline, refreshQueueCount } = useContext(SyncContext);
     const { user } = useContext(AuthContext);
     const userRole = user?.role || '';
