@@ -9,16 +9,19 @@ const LabDashboard = () => {
     const [records, setRecords] = useState([]);
     const [flags, setFlags] = useState([]);
     const [ponds, setPonds] = useState([]);
+    const [treatmentLogs, setTreatmentLogs] = useState([]);
 
     const load = useCallback(async () => {
-        const [r, f, p] = await Promise.all([
+        const [r, f, p, t] = await Promise.all([
             api.get('/api/lab-records/'),
             api.get('/api/lab-flags/'),
             api.get('/api/pond-logs/'),
+            api.get('/api/treatment-logs/'),
         ]);
         setRecords(r.data?.results || r.data || []);
         setFlags(f.data?.results || f.data || []);
         setPonds(p.data?.results || p.data || []);
+        setTreatmentLogs(t.data?.results || t.data || []);
     }, []);
 
     useEffect(() => {
@@ -30,6 +33,7 @@ const LabDashboard = () => {
     const activeFlags = flags.filter((x) => x.status === 'open' || x.status === 'escalated');
     const pondPending = ponds.filter((x) => x.status === 'pending_second_sign');
     const trend = records.slice().sort((a, b) => (a.record_date < b.record_date ? 1 : -1)).slice(0, 7);
+    const pendingTreatmentVerifications = treatmentLogs.filter((x) => x.review_status === 'pending_review').length;
 
     return (
         <div className="form-section active">
@@ -39,7 +43,7 @@ const LabDashboard = () => {
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 10 }}>
                 <Card title="Today's Lab Entry" value={todayRecord ? 'Submitted' : 'Pending'} cta="Enter Today's Results" onClick={() => navigate('/lab-records', { state: { focusToday: true } })} />
-                <Card title="Pending Verifications" value={records.filter((r) => r.status !== 'fully_signed').length} cta="Open Treatment" onClick={() => navigate('/treatment')} />
+                <Card title="Pending Verifications" value={pendingTreatmentVerifications} cta="Open Treatment" onClick={() => navigate('/treatment')} />
                 <Card title="Active Flags" value={activeFlags.length} cta="Open Alerts" onClick={() => navigate('/alerts')} />
                 <Card title="Pond Co-signs Pending" value={pondPending.length} cta="Open Ponds" onClick={() => navigate('/ponds')} />
             </div>

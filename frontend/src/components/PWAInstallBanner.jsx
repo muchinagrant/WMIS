@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 const PWAInstallBanner = () => {
   const [deferredPrompt, setDeferredPrompt] = useState(null);
   const [showBanner, setShowBanner] = useState(false);
+  const [autoPrompted, setAutoPrompted] = useState(false);
 
   useEffect(() => {
     // Check if app is already installed
@@ -52,6 +53,23 @@ const PWAInstallBanner = () => {
     }
   };
 
+  useEffect(() => {
+    if (!deferredPrompt || !showBanner || autoPrompted) {
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      setAutoPrompted(true);
+      try {
+        await handleInstall();
+      } catch {
+        // Browser may block automatic prompt invocation; banner remains available.
+      }
+    }, 1200);
+
+    return () => clearTimeout(timer);
+  }, [deferredPrompt, showBanner, autoPrompted]);
+
   const handleDismiss = () => {
     localStorage.setItem('pwa_install_dismissed_at', Date.now().toString());
     setShowBanner(false);
@@ -81,7 +99,7 @@ const PWAInstallBanner = () => {
             Install KICOWASCO on your device
           </div>
           <div style={{ fontSize: '14px', opacity: 0.9 }}>
-            Get the best experience with offline access and quick access from your home screen.
+            Install KICOWASCO on your device for the best experience, including offline access.
           </div>
         </div>
       </div>

@@ -70,7 +70,7 @@ export const SyncProvider = ({ children }) => {
       {/* Global UI Banner for Offline/Sync Status */}
       {!isOnline && (
         <div style={{ background: '#f39c12', color: 'white', textAlign: 'center', padding: '10px', position: 'fixed', bottom: 0, width: '100%', zIndex: 1000 }}>
-          <i className="fas fa-wifi-slash"></i> You are offline. Changes will be saved locally.
+          <i className="fas fa-wifi-slash"></i> You are offline. Your submission will be saved and sent automatically when you reconnect.
         </div>
       )}
       {isOnline && pendingCount > 0 && (

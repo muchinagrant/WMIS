@@ -2,6 +2,7 @@ import React, { useState, useContext, useEffect } from 'react';
 import { Formik, Form, Field, ErrorMessage } from 'formik';
 import * as Yup from 'yup';
 import api from '../api/axios';
+import { addToQueue } from '../api/offlineQueue';
 import { SyncContext } from '../context/SyncContext';
 import AuthContext from '../context/AuthContext';
 
@@ -35,11 +36,12 @@ const IncidenceForm = () => {
   const [zones, setZones] = useState([]);
   const [relatedIncidents, setRelatedIncidents] = useState([]);
   const [incidentSearchQuery, setIncidentSearchQuery] = useState('');
+  const [searchDebounceTimer, setSearchDebounceTimer] = useState(null);
   const [mapPreview, setMapPreview] = useState(null);
   const [photoList, setPhotoList] = useState([]);
   const [successIncident, setSuccessIncident] = useState(null);
   
-  const { isOnline } = useContext(SyncContext);
+  const { isOnline, refreshQueueCount } = useContext(SyncContext);
   const { user } = useContext(AuthContext);
 
   // Fetch zones on mount
@@ -81,7 +83,7 @@ const IncidenceForm = () => {
   const calculateSuggestedSeverity = (q1, q2) => {
     if (q1 && q2) return 'critical';
     if (q1) return 'high';
-    if (q2) return 'high';
+    if (q2) return 'medium';
     return 'low';
   };
 
@@ -145,17 +147,24 @@ const IncidenceForm = () => {
   // Search for related incidents
   const searchRelatedIncidents = async (query) => {
     setIncidentSearchQuery(query);
+    if (searchDebounceTimer) {
+      clearTimeout(searchDebounceTimer);
+    }
     if (!query || query.length < 2) {
       setRelatedIncidents([]);
       return;
     }
 
-    try {
-      const response = await api.get('/api/incidents/search/', { params: { location: query } });
-      setRelatedIncidents(Array.isArray(response.data) ? response.data : response.data?.results || []);
-    } catch (error) {
-      console.error('Search failed:', error);
-    }
+    const timer = setTimeout(async () => {
+      try {
+        const response = await api.get('/api/incidents/search/', { params: { location: query } });
+        setRelatedIncidents(Array.isArray(response.data) ? response.data : response.data?.results || []);
+      } catch (error) {
+        console.error('Search failed:', error);
+      }
+    }, 300);
+
+    setSearchDebounceTimer(timer);
   };
 
   // Handle photo upload
@@ -182,37 +191,51 @@ const IncidenceForm = () => {
   // Handle form submission
   const handleSubmit = async (values, { setSubmitting, resetForm }) => {
     setSubmitStatus({ type: '', message: '' });
+
+    const payload = {
+      reported_at: values.reported_at,
+      category: values.category,
+      severity: values.severity,
+      location_text: values.location_text,
+      latitude: values.latitude || null,
+      longitude: values.longitude || null,
+      zone: values.zone,
+      reported_by_name: values.reported_by_name,
+      reported_contact: values.reported_contact,
+      description: values.description,
+      received_by: user.id,
+      created_by: user.id,
+      sewer_line_reference: values.sewer_line_reference || null,
+      spillage_public_area: values.spillage_public_area || null,
+      other_category: values.other_category || null,
+      related_incident: values.related_incident_id || null,
+      assignment_instructions: ''
+    };
     
     if (!isOnline) {
-      setSubmitStatus({ 
-        type: 'error', 
-        message: 'You appear to be offline. This action will be queued and retried automatically.' 
-      });
-      return;
+      try {
+        await addToQueue('/api/incidents/', payload, 'POST', {
+          source: 'incident_form',
+          queued_at: new Date().toISOString()
+        });
+        await refreshQueueCount();
+        setSubmitStatus({
+          type: 'info',
+          message: 'You are offline. Your submission will be saved and sent automatically when you reconnect.'
+        });
+        setPhotoList([]);
+        resetForm();
+        return;
+      } catch {
+        setSubmitStatus({
+          type: 'error',
+          message: 'Failed to save offline submission. Please try again.'
+        });
+        return;
+      }
     }
 
     try {
-      // Prepare payload
-      const payload = {
-        reported_at: values.reported_at,
-        category: values.category,
-        severity: values.severity,
-        location_text: values.location_text,
-        latitude: values.latitude || null,
-        longitude: values.longitude || null,
-        zone: values.zone,
-        reported_by_name: values.reported_by_name,
-        reported_contact: values.reported_contact,
-        description: values.description,
-        received_by: user.id,
-        created_by: user.id,
-        sewer_line_reference: values.sewer_line_reference || null,
-        spillage_public_area: values.spillage_public_area || null,
-        other_category: values.other_category || null,
-        related_incident: values.related_incident_id || null,
-        assignment_instructions: ''
-      };
-
       // Create the incident
       const response = await api.post('/api/incidents/', payload);
       const incidentId = response.data.id;
@@ -249,6 +272,28 @@ const IncidenceForm = () => {
 
       setPhotoList([]);
     } catch (error) {
+      if (!navigator.onLine || error?.code === 'ERR_NETWORK' || error?.message === 'Network Error') {
+        try {
+          await addToQueue('/api/incidents/', payload, 'POST', {
+            source: 'incident_form',
+            queued_at: new Date().toISOString()
+          });
+          await refreshQueueCount();
+          setSubmitStatus({
+            type: 'info',
+            message: 'You are offline. Your submission will be saved and sent automatically when you reconnect.'
+          });
+          setPhotoList([]);
+          resetForm();
+          return;
+        } catch {
+          setSubmitStatus({
+            type: 'error',
+            message: 'Failed to save offline submission. Please try again.'
+          });
+          return;
+        }
+      }
       setSubmitStatus({ 
         type: 'error', 
         message: error.response?.data?.detail || 'Failed to submit incident. Please try again.' 
@@ -331,7 +376,7 @@ const IncidenceForm = () => {
               Report Another Incident
             </button>
             <button
-              onClick={() => window.location.href = '/dispatch'}
+              onClick={() => window.location.href = '/my-tasks'}
               style={{
                 background: '#6B7280',
                 color: 'white',
@@ -852,10 +897,10 @@ const IncidenceForm = () => {
                         }}
                       >
                         <div style={{ fontWeight: 'bold', fontSize: '13px' }}>
-                          {inc.incident_number} — {inc.category}
+                          {inc.reference_number} — {inc.category}
                         </div>
                         <div style={{ fontSize: '12px', color: '#6B7280' }}>
-                          {inc.location_text} • {inc.date || 'Unknown date'}
+                          {inc.location} • {inc.date || 'Unknown date'}
                         </div>
                       </div>
                     ))}

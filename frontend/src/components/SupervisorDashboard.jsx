@@ -10,18 +10,20 @@ const SupervisorDashboard = ({ defaultTab = 'overview' }) => {
     const [f203a, setF203a] = useState([]);
     const [labRecords, setLabRecords] = useState([]);
     const [flowRecords, setFlowRecords] = useState([]);
+    const [notifications, setNotifications] = useState([]);
     const [msg, setMsg] = useState({ type: '', text: '' });
     const [tab, setTab] = useState(defaultTab); // 'overview' | 'team' | 'treatment'
 
     const load = useCallback(async () => {
         try {
-            const [fl, p, t, a, lr, fr] = await Promise.all([
+            const [fl, p, t, a, lr, fr, n] = await Promise.all([
                 api.get('/api/lab-flags/'),
                 api.get('/api/pond-logs/'),
                 api.get('/api/treatment-logs/'),
                 api.get('/api/f203a/'),
                 api.get('/api/lab-records/?status=pending_operator'),
                 api.get('/api/flow-records/?status=pending_operator'),
+                api.get('/api/notifications/?notification_type=incident_critical'),
             ]);
             setFlags(fl.data?.results || fl.data || []);
             setPonds(p.data?.results || p.data || []);
@@ -29,6 +31,7 @@ const SupervisorDashboard = ({ defaultTab = 'overview' }) => {
             setF203a(a.data?.results || a.data || []);
             setLabRecords(lr.data?.results || lr.data || []);
             setFlowRecords(fr.data?.results || fr.data || []);
+            setNotifications(n.data?.results || n.data || []);
         } catch (err) {
             console.error('Failed to load dashboard data:', err);
         }
@@ -41,6 +44,9 @@ const SupervisorDashboard = ({ defaultTab = 'overview' }) => {
     const pondPending = ponds.filter((x) => x.status === 'pending_supervisor');
     const openFlags = flags.filter((x) => x.status === 'open' || x.status === 'resolved');
     const redFlags = openFlags.filter((x) => x.severity === 'red');
+    const abnormalityAlerts = notifications
+        .filter((n) => (n.title || '').toLowerCase().startsWith('abnormality flagged'))
+        .slice(0, 6);
 
     const now = new Date();
     const monthLogs = tlogs.filter((x) => {
@@ -111,11 +117,27 @@ const SupervisorDashboard = ({ defaultTab = 'overview' }) => {
                     <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: 12 }}>
                         <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, padding: 12 }}>
                             <h3 style={{ margin: '0 0 8px' }}>Alerts Panel</h3>
-                            {openFlags.length === 0 ? <div style={{ color: '#64748b' }}>No active alerts.</div> : openFlags.slice(0, 6).map((f) => (
-                                <div key={f.id} style={{ marginBottom: 6, fontSize: '0.86rem', color: f.severity === 'red' ? '#b91c1c' : '#92400e' }}>
-                                    {f.lab_record_date} • {f.parameter_key} • {f.severity}
-                                </div>
-                            ))}
+                            {abnormalityAlerts.length === 0 ? (
+                                <div style={{ color: '#64748b' }}>No attendant/operator abnormalities flagged today.</div>
+                            ) : (
+                                abnormalityAlerts.map((alert) => (
+                                    <div key={alert.id} style={{ border: '1px solid #fecaca', borderRadius: 6, padding: 8, marginBottom: 8, background: '#fff7ed' }}>
+                                        <div style={{ fontSize: '0.86rem', color: '#9a3412', fontWeight: 700 }}>{alert.title}</div>
+                                        <div style={{ fontSize: '0.82rem', color: '#7c2d12', marginTop: 2 }}>{alert.message}</div>
+                                        <button onClick={() => navigate('/f203a')} style={{ marginTop: 6, background: '#b45309', color: '#fff', border: 'none', borderRadius: 6, padding: '5px 9px', cursor: 'pointer', fontSize: '0.78rem' }}>
+                                            Review
+                                        </button>
+                                    </div>
+                                ))
+                            )}
+                            <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid #e2e8f0' }}>
+                                <div style={{ color: '#64748b', fontSize: '0.8rem', marginBottom: 6 }}>Lab compliance flags</div>
+                                {openFlags.length === 0 ? <div style={{ color: '#94a3b8', fontSize: '0.82rem' }}>No active lab flags.</div> : openFlags.slice(0, 3).map((f) => (
+                                    <div key={f.id} style={{ marginBottom: 6, fontSize: '0.82rem', color: f.severity === 'red' ? '#b91c1c' : '#92400e' }}>
+                                        {f.lab_record_date} • {f.parameter_key} • {f.severity}
+                                    </div>
+                                ))}
+                            </div>
                         </div>
                         <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, padding: 12 }}>
                             <h3 style={{ margin: '0 0 8px' }}>Pond Sign-offs Pending</h3>

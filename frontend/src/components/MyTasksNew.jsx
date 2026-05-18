@@ -40,15 +40,15 @@ const MyTasksNew = () => {
         if (!user?.id) return;
         setLoading(true);
         try {
-            // Load all assigned and in-progress tasks for this user
-            const assignedResponse = await api.get(`/api/incidents/?assigned_to=${user.id}&status=assigned`);
-            const inProgressResponse = await api.get(`/api/incidents/?assigned_to=${user.id}&status=in_progress`);
-            const certificationResponse = await api.get(`/api/incidents/?assigned_to=${user.id}&status=pending_certification`);
-            const historyResponse = await api.get(`/api/incidents/?assigned_to=${user.id}&status=closed`);
+            const [myTasksResponse, historyResponse] = await Promise.all([
+                api.get('/api/incidents/my_tasks/'),
+                api.get(`/api/incidents/?assigned_to=${user.id}&status=closed`),
+            ]);
 
-            const assignedList = Array.isArray(assignedResponse.data) ? assignedResponse.data : (assignedResponse.data?.results || []);
-            const inProgressList = Array.isArray(inProgressResponse.data) ? inProgressResponse.data : (inProgressResponse.data?.results || []);
-            const certificationList = Array.isArray(certificationResponse.data) ? certificationResponse.data : (certificationResponse.data?.results || []);
+            const myTasksList = Array.isArray(myTasksResponse.data) ? myTasksResponse.data : (myTasksResponse.data?.results || []);
+            const assignedList = myTasksList.filter((t) => t.status === 'assigned');
+            const inProgressList = myTasksList.filter((t) => t.status === 'in_progress');
+            const certificationList = myTasksList.filter((t) => t.status === 'pending_certification' || t.status === 'completed');
             const historyList = Array.isArray(historyResponse.data) ? historyResponse.data : (historyResponse.data?.results || []);
 
             setTasks({

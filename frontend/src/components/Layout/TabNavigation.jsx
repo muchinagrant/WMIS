@@ -75,7 +75,7 @@ const TabNavigation = ({ orientation = 'horizontal' }) => {
                 </NavLink>
             )}
             {hasAccess('dispatch') && (
-                <NavLink to="/dispatch" className={({ isActive }) => isActive ? 'tab active' : 'tab'}>
+                <NavLink to={userRole === 'line_attendant' ? '/my-tasks' : '/dispatch'} className={({ isActive }) => isActive ? 'tab active' : 'tab'}>
                     <i className="fas fa-tasks"></i> {userRole === 'line_attendant' ? 'My Tasks' : 'Dispatch'}
                 </NavLink>
             )}

@@ -5,6 +5,7 @@ from rest_framework.decorators import action
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.response import Response
 from rest_framework.exceptions import PermissionDenied
+from django.conf import settings
 from rest_framework_simplejwt.views import TokenObtainPairView
 from django.contrib.auth import get_user_model
 from django.utils import timezone
@@ -55,6 +56,19 @@ def _notify_roles(roles, title, message, notification_type='approval', link_url=
     if notifications:
         Notification.objects.bulk_create(notifications)
 
+
+def _notify_user(user, title, message, notification_type='general', link_url='', related_incident=None):
+    if not user:
+        return
+    Notification.objects.create(
+        recipient=user,
+        title=title,
+        message=message,
+        notification_type=notification_type,
+        link_url=link_url,
+        related_incident=related_incident,
+    )
+
 # --- CUSTOM AUTHENTICATION VIEW ---
 class CustomTokenObtainPairView(TokenObtainPairView):
     """
@@ -93,7 +107,16 @@ class IncidentViewSet(ExecutiveReadOnlyMixin, viewsets.ModelViewSet):
         return qs
 
     def perform_create(self, serializer):
-        serializer.save(created_by=self.request.user)
+        incident = serializer.save(created_by=self.request.user)
+        if incident.severity == 'high':
+            reporter = incident.reported_by_name or self.request.user.get_full_name() or self.request.user.username
+            _notify_roles(
+                ['line_supervisor'],
+                'Critical Incident Alert',
+                f'⚠ CRITICAL INCIDENT: {incident.get_category_display()} reported at {incident.location_text} by {reporter}. Immediate action required.',
+                notification_type='incident_critical',
+                link_url='/dispatch',
+            )
 
     @action(detail=True, methods=['patch'], permission_classes=[IsAuthenticated, IsLineSupervisorOrAbove])
     def close(self, request, pk=None):
@@ -158,6 +181,15 @@ class IncidentViewSet(ExecutiveReadOnlyMixin, viewsets.ModelViewSet):
             incident.status = 'assigned'
             incident.assigned_at = timezone.now()  # <-- AUTOMATED TIMESTAMP
             incident.save()
+
+            _notify_user(
+                technician,
+                'New Task Assigned',
+                f'New task assigned: {incident.get_category_display()} at {incident.location_text}. Tap to view.',
+                notification_type='task_assigned',
+                link_url='/my-tasks',
+                related_incident=incident,
+            )
             
             serializer = self.get_serializer(incident)
             return Response(serializer.data, status=status.HTTP_200_OK)
@@ -199,12 +231,57 @@ class IncidentViewSet(ExecutiveReadOnlyMixin, viewsets.ModelViewSet):
                 return Response({'error': 'Invalid status transition for your role.'}, status=status.HTTP_403_FORBIDDEN)
 
         # --- RULE 2: Grade 4 Supervisors override authority ---
-        
+        old_status = incident.status
         incident.status = new_status
+        if new_status == 'pending_certification' and request.user.role == 'line_attendant':
+            incident.completed_at = timezone.now()
         incident.save()
+
+        if old_status != 'pending_certification' and new_status == 'pending_certification' and incident.assigned_to == request.user:
+            supervisors = User.objects.filter(role='line_supervisor')
+            for supervisor in supervisors:
+                _notify_user(
+                    supervisor,
+                    'Task Completion Pending Certification',
+                    f'{request.user.get_full_name() or request.user.username} has completed {incident.get_category_display()} at {incident.location_text}. Pending your certification.',
+                    notification_type='task_completed',
+                    link_url='/dispatch',
+                    related_incident=incident,
+                )
+
         serializer = self.get_serializer(incident)
         return Response(serializer.data, status=status.HTTP_200_OK)
     
+    @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated])
+    def my_tasks(self, request):
+        tasks = Incident.objects.filter(
+            assigned_to=request.user,
+            status__in=['assigned', 'in_progress', 'completed', 'pending_certification']
+        ).order_by('-updated_at')
+        serializer = self.get_serializer(tasks, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated])
+    def certify(self, request, pk=None):
+        try:
+            incident = self.get_object()
+        except Incident.DoesNotExist:
+            return Response({'error': 'Incident not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        if getattr(request.user, 'role', '') != 'line_supervisor':
+            return Response({'error': 'Only line supervisors can certify incidents.'}, status=status.HTTP_403_FORBIDDEN)
+
+        if incident.status != 'pending_certification':
+            return Response({'error': f'Incident must be pending_certification before certifying. Current status: {incident.status}.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        incident.status = 'closed'
+        incident.certified_by = request.user
+        incident.certified_at = timezone.now()
+        incident.save(update_fields=['status', 'certified_by', 'certified_at', 'updated_at'])
+
+        serializer = self.get_serializer(incident)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
     @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated])
     def search(self, request):
         """
@@ -224,8 +301,17 @@ class IncidentViewSet(ExecutiveReadOnlyMixin, viewsets.ModelViewSet):
             status__in=['assigned', 'in_progress', 'pending_certification', 'resolved', 'closed']
         ).order_by('-reported_at')[:20]  # Limit to 20 results
         
-        serializer = self.get_serializer(incidents, many=True)
-        return Response({'results': serializer.data}, status=status.HTTP_200_OK)
+        results = [
+            {
+                'id': incident.id,
+                'reference_number': incident.incident_number,
+                'category': incident.get_category_display(),
+                'date': incident.reported_at.date().isoformat() if incident.reported_at else None,
+                'location': incident.location_text,
+            }
+            for incident in incidents
+        ]
+        return Response({'results': results}, status=status.HTTP_200_OK)
 
 
 class RepairViewSet(LockEnforcementMixin, ExecutiveReadOnlyMixin, viewsets.ModelViewSet):
@@ -695,6 +781,8 @@ class DailyLabRecordViewSet(MonthLockEnforcementMixin, LockEnforcementMixin, Exe
         self._sync_flags(record)
 
     def perform_update(self, serializer):
+        if getattr(self.request.user, 'role', '') != 'lab_tech':
+            raise PermissionDenied('Only lab_tech can update lab records.')
         record = serializer.save()
         self._sync_flags(record)
 
@@ -702,22 +790,25 @@ class DailyLabRecordViewSet(MonthLockEnforcementMixin, LockEnforcementMixin, Exe
         record.compliance_flags.filter(status='open').delete()
         created = []
 
+        red_threshold = float(settings.BOD_REMOVAL_RED_THRESHOLD)
+        amber_threshold = float(settings.BOD_REMOVAL_AMBER_THRESHOLD)
+
         if record.bod_removal_efficiency is not None:
-            if float(record.bod_removal_efficiency) < 60:
+            if float(record.bod_removal_efficiency) < red_threshold:
                 created.append(LabComplianceFlag.objects.create(
                     lab_record=record,
                     parameter_key='bod_removal_efficiency',
                     measured_value=record.bod_removal_efficiency,
-                    threshold_value=60,
+                    threshold_value=red_threshold,
                     threshold_mode='min',
                     severity='red',
                 ))
-            elif float(record.bod_removal_efficiency) < 80:
+            elif float(record.bod_removal_efficiency) < amber_threshold:
                 created.append(LabComplianceFlag.objects.create(
                     lab_record=record,
                     parameter_key='bod_removal_efficiency',
                     measured_value=record.bod_removal_efficiency,
-                    threshold_value=80,
+                    threshold_value=amber_threshold,
                     threshold_mode='min',
                     severity='amber',
                 ))
@@ -750,9 +841,11 @@ class DailyLabRecordViewSet(MonthLockEnforcementMixin, LockEnforcementMixin, Exe
                     link_url='/alerts',
                 )
 
-    @action(detail=True, methods=['patch'], permission_classes=[IsAuthenticated, IsSTPSupervisorOrAbove])
+    @action(detail=True, methods=['patch'], permission_classes=[IsAuthenticated])
     def verify(self, request, pk=None):
         record = self.get_object()
+        if getattr(request.user, 'role', '') != 'lab_tech':
+            return Response({'error': 'Only lab_tech can verify lab records.'}, status=status.HTTP_403_FORBIDDEN)
         if record.status == 'fully_signed':
             return Response({'error': 'Record already verified and locked.'}, status=status.HTTP_400_BAD_REQUEST)
         record.status = 'fully_signed'
@@ -834,7 +927,64 @@ class UserViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         # For single-company deployments, bypass company filtering
         # TODO: Re-enable multi-company isolation when needed
-        return super().get_queryset()
+        qs = super().get_queryset()
+        role = self.request.query_params.get('role')
+        if role:
+            qs = qs.filter(role=role)
+        include_task_count = str(self.request.query_params.get('include_task_count', '')).lower() in {'1', 'true', 'yes', 'on'}
+        if include_task_count:
+            qs = qs.annotate(
+                assigned_tasks_count=Count(
+                    'assigned_incidents',
+                    filter=Q(assigned_incidents__status__in=['assigned', 'in_progress'])
+                )
+            )
+        return qs
+
+    def retrieve(self, request, *args, **kwargs):
+        instance = self.get_object()
+        response = super().retrieve(request, *args, **kwargs)
+
+        thirty_days_ago = timezone.now() - datetime.timedelta(days=30)
+
+        if instance.role == 'line_attendant':
+            resolved_incidents = Incident.objects.filter(
+                assigned_to=instance,
+                assigned_at__isnull=False,
+                completed_at__isnull=False,
+                completed_at__gte=thirty_days_ago,
+            )
+            durations = [incident.resolution_time_minutes for incident in resolved_incidents if incident.resolution_time_minutes is not None]
+            response.data['avg_resolution_minutes_30d'] = int(sum(durations) / len(durations)) if durations else None
+
+        if instance.role == 'line_supervisor':
+            attendants = User.objects.filter(role='line_attendant')
+            per_attendant = []
+            for attendant in attendants:
+                resolved_incidents = Incident.objects.filter(
+                    assigned_to=attendant,
+                    assigned_at__isnull=False,
+                    completed_at__isnull=False,
+                    completed_at__gte=thirty_days_ago,
+                )
+                durations = [incident.resolution_time_minutes for incident in resolved_incidents if incident.resolution_time_minutes is not None]
+                per_attendant.append({
+                    'attendant_id': attendant.id,
+                    'attendant_name': attendant.get_full_name() or attendant.username,
+                    'avg_resolution_minutes_30d': int(sum(durations) / len(durations)) if durations else None,
+                })
+            response.data['team_avg_resolution_minutes_30d'] = per_attendant
+
+        return response
+
+    @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated])
+    def fcm_token(self, request):
+        token = (request.data.get('token') or '').strip()
+        if not token:
+            return Response({'error': 'token is required.'}, status=status.HTTP_400_BAD_REQUEST)
+        request.user.fcm_token = token
+        request.user.save(update_fields=['fcm_token'])
+        return Response({'message': 'FCM token saved.'}, status=status.HTTP_200_OK)
 
     @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated])
     def change_password(self, request):
@@ -1076,6 +1226,7 @@ class SummaryViewSet(APIView):
         new_main = patrol_rows.aggregate(Sum('new_main_connections'))['new_main_connections__sum'] or 0
         new_branch = patrol_rows.aggregate(Sum('new_branch_connections'))['new_branch_connections__sum'] or 0
         repairs_completed = Repair.objects.filter(completion_date__year=year, completion_date__month=month).count()
+        repairs_certified = Repair.objects.filter(certified_at__year=year, certified_at__month=month).count()
 
         lab_qs = DailyLabRecord.objects.filter(record_date__year=year, record_date__month=month)
 
@@ -1107,6 +1258,7 @@ class SummaryViewSet(APIView):
                 "total_incidents": incidents.count(),
                 "resolved_incidents": incidents.filter(status__in=['resolved', 'closed']).count(),
                 "repairs_completed": repairs_completed,
+                "repairs_certified": repairs_certified,
                 "new_connections": new_main + new_branch,
                 "spillage_incidences": incidents.filter(category='spillage').count(),
             },
@@ -1334,7 +1486,7 @@ class SummaryViewSet(APIView):
 
 # --- ZONE VIEWSET (Section 3.1) ---
 
-class ZoneViewSet(viewsets.ReadOnlyModelViewSet):
+class ZoneViewSet(viewsets.ModelViewSet):
     """
     ViewSet for Zone/drainage area model.
     Provides GET list (active zones) for form dropdowns.
@@ -1346,10 +1498,25 @@ class ZoneViewSet(viewsets.ReadOnlyModelViewSet):
     search_fields = ['name', 'description']
     ordering_fields = ['name', 'created_at']
 
+    def _ensure_admin(self, request):
+        if getattr(request.user, 'role', '') != 'admin':
+            raise PermissionDenied('Only admin users can modify zones.')
+
+    def create(self, request, *args, **kwargs):
+        self._ensure_admin(request)
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    def partial_update(self, request, *args, **kwargs):
+        self._ensure_admin(request)
+        return super().partial_update(request, *args, **kwargs)
+
 
 # --- SEWER LINE VIEWSET (Section 3.2) ---
 
-class SewerLineViewSet(viewsets.ReadOnlyModelViewSet):
+class SewerLineViewSet(viewsets.ModelViewSet):
     """
     ViewSet for SewerLine asset registry.
     Provides GET list with zone filtering and search for patrol forms.
@@ -1360,6 +1527,21 @@ class SewerLineViewSet(viewsets.ReadOnlyModelViewSet):
     filterset_fields = ['zone', 'is_active', 'pipe_material']
     search_fields = ['reference_code', 'description', 'start_point', 'end_point']
     ordering_fields = ['reference_code', 'zone', 'created_at']
+
+    def _ensure_admin(self, request):
+        if getattr(request.user, 'role', '') != 'admin':
+            raise PermissionDenied('Only admin users can modify sewer lines.')
+
+    def create(self, request, *args, **kwargs):
+        self._ensure_admin(request)
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    def partial_update(self, request, *args, **kwargs):
+        self._ensure_admin(request)
+        return super().partial_update(request, *args, **kwargs)
 
 
 # --- NOTIFICATION VIEWSET (Section 2) ---

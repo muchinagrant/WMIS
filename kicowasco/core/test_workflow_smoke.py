@@ -6,7 +6,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 
 from django.contrib.auth import get_user_model
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
 from core.models import (
@@ -236,6 +236,75 @@ class WorkflowSmokeTests(TestCase):
         )
         self.assertEqual(resolve.status_code, 200)
         self.assertEqual(resolve.data['status'], 'resolved')
+
+    def test_only_lab_tech_can_update_lab_records(self):
+        lab_date = self.base_date + timedelta(days=14)
+        DailyLabRecord.objects.filter(record_date=lab_date).delete()
+
+        self._auth('lab_tech')
+        create = self.client.post('/api/lab-records/', {
+            'record_date': lab_date.isoformat(),
+            'inflow_bod': '120',
+            'effluent_bod': '40',
+            'inflow_tss': '90',
+            'effluent_tss': '25',
+        }, format='json')
+        self.assertEqual(create.status_code, 201, create.data)
+
+        self._auth('stp_supervisor')
+        patch = self.client.patch(
+            f'/api/lab-records/{create.data["id"]}/',
+            {'remarks': 'Supervisor attempted edit.'},
+            format='json',
+        )
+        self.assertEqual(patch.status_code, 403)
+
+    @override_settings(BOD_REMOVAL_RED_THRESHOLD=70.0, BOD_REMOVAL_AMBER_THRESHOLD=90.0)
+    def test_lab_flag_thresholds_use_settings_constants(self):
+        lab_date = self.base_date + timedelta(days=15)
+        DailyLabRecord.objects.filter(record_date=lab_date).delete()
+
+        self._auth('lab_tech')
+        create = self.client.post('/api/lab-records/', {
+            'record_date': lab_date.isoformat(),
+            'inflow_bod': '100',
+            'effluent_bod': '15',
+            'inflow_tss': '80',
+            'effluent_tss': '20',
+        }, format='json')
+        self.assertEqual(create.status_code, 201, create.data)
+
+        # BOD efficiency = 85%, should be amber with overridden 70/90 thresholds.
+        flag = LabComplianceFlag.objects.filter(
+            lab_record_id=create.data['id'],
+            parameter_key='bod_removal_efficiency',
+        ).first()
+        self.assertIsNotNone(flag)
+        self.assertEqual(flag.severity, 'amber')
+        self.assertEqual(float(flag.threshold_value), 90.0)
+
+    def test_only_lab_tech_can_verify_lab_records(self):
+        lab_date = self.base_date + timedelta(days=16)
+        DailyLabRecord.objects.filter(record_date=lab_date).delete()
+
+        self._auth('lab_tech')
+        create = self.client.post('/api/lab-records/', {
+            'record_date': lab_date.isoformat(),
+            'inflow_bod': '100',
+            'effluent_bod': '30',
+            'inflow_tss': '90',
+            'effluent_tss': '20',
+        }, format='json')
+        self.assertEqual(create.status_code, 201, create.data)
+
+        self._auth('stp_supervisor')
+        blocked = self.client.patch(f'/api/lab-records/{create.data["id"]}/verify/')
+        self.assertEqual(blocked.status_code, 403)
+
+        self._auth('lab_tech')
+        verify = self.client.patch(f'/api/lab-records/{create.data["id"]}/verify/')
+        self.assertEqual(verify.status_code, 200)
+        self.assertEqual(verify.data['status'], 'fully_signed')
 
     def test_pond_three_step_cosign(self):
         log_date = self.base_date + timedelta(days=5)

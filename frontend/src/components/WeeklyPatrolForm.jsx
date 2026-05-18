@@ -16,6 +16,7 @@ const createRow = () => ({
     new_main_connections: 0,
     new_branch_connections: 0,
     immediate_action_taken: '',
+    further_action_needed: false,
     further_action_required: '',
     photo: null,
     photoPreview: null,
@@ -30,6 +31,7 @@ const PatrolRowSchema = Yup.object().shape({
     new_main_connections: Yup.number().min(0, 'Cannot be negative').integer('Must be a whole number').required(),
     new_branch_connections: Yup.number().min(0, 'Cannot be negative').integer('Must be a whole number').required(),
     immediate_action_taken: Yup.string(),
+    further_action_needed: Yup.boolean(),
     further_action_required: Yup.string(),
     sectionSearch: Yup.string(),
     photo: Yup.mixed().nullable(),
@@ -47,6 +49,7 @@ const WeeklyPatrolForm = () => {
     const [sewerLines, setSewerLines] = useState([]);
     const [submittedPatrol, setSubmittedPatrol] = useState(null);
     const [draftPatrol, setDraftPatrol] = useState(null);
+    const [sewerSearchTimer, setSewerSearchTimer] = useState(null);
     const { isOnline, refreshQueueCount } = useContext(SyncContext);
     const { user } = useContext(AuthContext);
 
@@ -94,13 +97,13 @@ const WeeklyPatrolForm = () => {
     }, [user?.id]);
 
     // Load sewer lines when zone is selected
-    const loadSewerLines = async (zoneId) => {
+    const loadSewerLines = async (zoneId, search = '') => {
         if (!zoneId) {
             setSewerLines([]);
             return;
         }
         try {
-            const response = await api.get(`/api/sewer-lines/?zone=${zoneId}&is_active=true`);
+            const response = await api.get(`/api/sewer-lines/?zone=${zoneId}&search=${encodeURIComponent(search)}&is_active=true`);
             const linesList = Array.isArray(response.data) ? response.data : (response.data?.results || []);
             setSewerLines(linesList);
         } catch (error) {
@@ -213,7 +216,7 @@ const WeeklyPatrolForm = () => {
         }
     };
 
-    const getSectionByRef = (refCode) => sewerLines.find((line) => String(line.reference_code) === String(refCode));
+    const getSectionByRef = (lineId) => sewerLines.find((line) => String(line.id) === String(lineId));
 
     const zoneForDraft = draftPatrol?.zone;
     const draftZoneName = zones.find(z => z.id === zoneForDraft)?.name || '';
@@ -368,8 +371,17 @@ const WeeklyPatrolForm = () => {
                                                         <Field
                                                             type="text"
                                                             name={`rows.${index}.sectionSearch`}
-                                                            placeholder="Search by reference code..."
-                                                            onChange={(e) => setFieldValue(`rows.${index}.sectionSearch`, e.target.value)}
+                                                            placeholder={values.zone ? 'Search by reference code...' : 'Select a zone first to filter sewer lines.'}
+                                                            onChange={(e) => {
+                                                                const query = e.target.value;
+                                                                setFieldValue(`rows.${index}.sectionSearch`, query);
+                                                                if (!values.zone) return;
+                                                                if (sewerSearchTimer) {
+                                                                    clearTimeout(sewerSearchTimer);
+                                                                }
+                                                                const timer = setTimeout(() => loadSewerLines(values.zone, query), 300);
+                                                                setSewerSearchTimer(timer);
+                                                            }}
                                                             style={{ width: '100%', padding: '8px', borderRadius: '4px', border: '1px solid #cbd5e1', marginBottom: '6px' }}
                                                         />
                                                         {filteredSections.length > 0 && (
@@ -378,7 +390,7 @@ const WeeklyPatrolForm = () => {
                                                                     <div
                                                                         key={line.id}
                                                                         onClick={() => {
-                                                                            setFieldValue(`rows.${index}.sewer_line_section`, line.reference_code);
+                                                                            setFieldValue(`rows.${index}.sewer_line_section`, line.id);
                                                                             setFieldValue(`rows.${index}.sectionSearch`, '');
                                                                             setFieldValue(`rows.${index}.sewer_line_ref_text`, line.description || line.reference_code);
                                                                         }}
@@ -463,13 +475,39 @@ const WeeklyPatrolForm = () => {
                                                         />
                                                     </div>
 
+                                                    <div style={{ marginBottom: '12px' }}>
+                                                        <label style={{ fontSize: '0.85rem', fontWeight: 600, marginBottom: '6px', display: 'block' }}>Was further action required?</label>
+                                                        <div style={{ display: 'flex', gap: '8px' }}>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    setFieldValue(`rows.${index}.further_action_needed`, true);
+                                                                }}
+                                                                style={{ padding: '8px 12px', borderRadius: '4px', border: '1px solid #cbd5e1', background: row.further_action_needed ? '#1a6fb0' : '#fff', color: row.further_action_needed ? '#fff' : '#334155', cursor: 'pointer' }}
+                                                            >
+                                                                Yes
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    setFieldValue(`rows.${index}.further_action_needed`, false);
+                                                                    setFieldValue(`rows.${index}.further_action_required`, '');
+                                                                }}
+                                                                style={{ padding: '8px 12px', borderRadius: '4px', border: '1px solid #cbd5e1', background: !row.further_action_needed ? '#1a6fb0' : '#fff', color: !row.further_action_needed ? '#fff' : '#334155', cursor: 'pointer' }}
+                                                            >
+                                                                No
+                                                            </button>
+                                                        </div>
+                                                    </div>
+
                                                     {/* Further Action Required (conditional visibility) */}
+                                                    {row.further_action_needed && (
                                                     <div style={{ marginBottom: '12px' }}>
                                                         <label style={{ fontSize: '0.85rem', fontWeight: 600, marginBottom: '4px', display: 'block' }}>Further Action Required</label>
                                                         <Field
                                                             as="textarea"
                                                             name={`rows.${index}.further_action_required`}
-                                                            placeholder="Leave blank if no further action needed..."
+                                                            placeholder="Provide details on required follow-up action..."
                                                             style={{ width: '100%', padding: '8px', borderRadius: '4px', border: '1px solid #cbd5e1', minHeight: '60px' }}
                                                         />
                                                         {showFurtherAction && (
@@ -478,6 +516,7 @@ const WeeklyPatrolForm = () => {
                                                             </div>
                                                         )}
                                                     </div>
+                                                    )}
 
                                                     {/* Photo Upload (Section 5.6) */}
                                                     <div style={{ marginBottom: '0' }}>
@@ -549,6 +588,29 @@ const WeeklyPatrolForm = () => {
                                         >
                                             <i className="fas fa-plus" style={{ marginRight: 6 }}></i> Add Patrol Row
                                         </button>
+
+                                        {values.rows.length > 1 && (
+                                            <button
+                                                type="button"
+                                                onClick={() => push(createRow())}
+                                                style={{
+                                                    position: 'fixed',
+                                                    right: '16px',
+                                                    bottom: '70px',
+                                                    zIndex: 60,
+                                                    padding: '12px 14px',
+                                                    background: '#1a6fb0',
+                                                    color: 'white',
+                                                    border: 'none',
+                                                    borderRadius: '999px',
+                                                    boxShadow: '0 8px 18px rgba(0,0,0,0.2)',
+                                                    cursor: 'pointer',
+                                                    fontWeight: 700,
+                                                }}
+                                            >
+                                                + Add Patrol Row
+                                            </button>
+                                        )}
                                     </div>
                                 )}
                             </FieldArray>

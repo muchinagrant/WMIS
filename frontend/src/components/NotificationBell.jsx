@@ -31,6 +31,12 @@ const NotificationBell = () => {
     }
   };
 
+  useEffect(() => {
+    if (!isOpen || unreadCount === 0) return;
+    handleMarkAllRead();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen]);
+
   // Poll for notifications every 60 seconds (as fallback for push notifications)
   useEffect(() => {
     fetchNotifications();

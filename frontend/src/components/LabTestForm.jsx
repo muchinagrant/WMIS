@@ -83,7 +83,7 @@ const LabTestForm = () => {
     const { user } = useContext(AuthContext);
     const location = useLocation();
     const userRole = user?.role || 'lab_tech';
-    const canVerify = ['admin', 'stp_superintendent', 'stp_supervisor'].includes(userRole);
+    const canVerify = userRole === 'lab_tech';
     const isSupervisor = userRole === 'stp_supervisor';
     const [retestNote, setRetestNote] = useState('');
     const [retestOpen, setRetestOpen] = useState(false);

@@ -494,10 +494,15 @@ class UserSerializer(serializers.ModelSerializer):
     full_name = serializers.ReadOnlyField(source='get_full_name')
     company_name = serializers.ReadOnlyField(source='company.name')
     company_code = serializers.ReadOnlyField(source='company.code')
+    assigned_tasks_count = serializers.IntegerField(read_only=True)
+    assigned_zone_names = serializers.SerializerMethodField()
+
+    def get_assigned_zone_names(self, obj):
+        return [zone.name for zone in obj.assigned_zones.all()]
     
     class Meta:
         model = User
-        fields = ['id', 'username', 'email', 'phone_number', 'first_name', 'last_name', 'full_name', 'role', 'company', 'company_name', 'company_code']
+        fields = ['id', 'username', 'email', 'phone_number', 'first_name', 'last_name', 'full_name', 'role', 'company', 'company_name', 'company_code', 'assigned_tasks_count', 'assigned_zone_names']
         read_only_fields = ['id', 'username', 'full_name', 'company_name', 'company_code', 'role', 'company']
 
 

@@ -40,7 +40,7 @@ const DispatchDashboardNew = () => {
     useEffect(() => {
         const loadUsers = async () => {
             try {
-                const response = await api.get('/api/users/?role=stp_attendant');
+                const response = await api.get('/api/users/?role=line_attendant&include_task_count=true');
                 const userList = Array.isArray(response.data) ? response.data : (response.data?.results || []);
                 setUsers(userList);
             } catch (error) {
@@ -119,14 +119,11 @@ const DispatchDashboardNew = () => {
 
     const handleCertify = async (incidentId, isApproved) => {
         try {
-            const payload = {
-                status: isApproved ? 'closed' : 'in_progress',
-                certified_by: user?.id,
-                certified_at: new Date().toISOString(),
-                completed_at: new Date().toISOString(),
-            };
-
-            await api.patch(`/api/incidents/${incidentId}/`, payload);
+            if (isApproved) {
+                await api.post(`/api/incidents/${incidentId}/certify/`, { certification_notes: certNotes });
+            } else {
+                await api.post(`/api/incidents/${incidentId}/update_status/`, { status: 'in_progress' });
+            }
             setCertificationModal(null);
             setCertNotes('');
             loadIncidents();

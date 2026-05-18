@@ -2,6 +2,7 @@
 const CACHE_NAME = 'kicowasco-cache-v1';
 const STATIC_ASSETS_CACHE = 'kicowasco-static-v1';
 const API_CACHE = 'kicowasco-api-v1';
+const STATIC_EXTENSIONS = ['.js', '.css', '.png', '.jpg', '.jpeg', '.svg', '.ico', '.woff', '.woff2', '.mp3'];
 
 // 1. Install step: Cache the core files
 self.addEventListener('install', (event) => {
@@ -12,7 +13,9 @@ self.addEventListener('install', (event) => {
           '/',
           '/index.html',
           '/manifest.json',
-          '/favicon.ico'
+          '/favicon.ico',
+          '/logo192.png',
+          '/logo512.png'
         ]);
       }),
       caches.open(STATIC_ASSETS_CACHE).then((cache) => {
@@ -67,6 +70,27 @@ self.addEventListener('fetch', (event) => {
 
   // For non-GET requests, don't intercept (SyncContext handles queuing)
   if (request.method !== 'GET') return;
+
+  // Cache-first for local static/form assets
+  const isSameOrigin = url.origin === self.location.origin;
+  const isStaticAsset = STATIC_EXTENSIONS.some((ext) => url.pathname.endsWith(ext));
+  if (isSameOrigin && isStaticAsset) {
+    event.respondWith(
+      caches.match(request).then((cached) => {
+        if (cached) {
+          return cached;
+        }
+        return fetch(request).then((response) => {
+          if (response && response.status === 200) {
+            const clone = response.clone();
+            caches.open(STATIC_ASSETS_CACHE).then((cache) => cache.put(request, clone));
+          }
+          return response;
+        });
+      })
+    );
+    return;
+  }
 
   // Handle static asset requests with network-first strategy
   event.respondWith(

@@ -99,6 +99,8 @@ const MonthlySummary = () => {
         window.open(`${api.defaults.baseURL}/api/summary/?year=${selectedYear}&month=${selectedMonth}&export=csv`, '_blank');
     };
 
+    const repairsCertified = summaryData?.collection?.repairs_certified ?? summaryData?.collection?.repairs_completed ?? 0;
+
     const KPICard = ({ title, value, icon, color, subtitle }) => (
         <div style={{ background: 'white', padding: '20px', borderRadius: '10px', borderLeft: `5px solid ${color}`, boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -216,10 +218,10 @@ const MonthlySummary = () => {
                         />
                         <KPICard
                             title="Repairs Certified (SLA Closed)"
-                            value={summaryData.collection.resolved_incidents}
+                            value={repairsCertified}
                             icon="fa-tools"
                             color="#1a6fb0"
-                            subtitle={`${summaryData.collection.total_incidents - summaryData.collection.resolved_incidents} pending resolution`}
+                            subtitle={`${summaryData.collection.total_incidents - repairsCertified} pending resolution`}
                         />
                         <KPICard
                             title="New Unmetered Connections"

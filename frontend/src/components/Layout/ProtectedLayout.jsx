@@ -2,6 +2,7 @@ import React, { useContext } from 'react';
 import { Navigate, Outlet } from 'react-router-dom';
 import AuthContext from '../../context/AuthContext';
 import PWAInstallBanner from '../PWAInstallBanner';
+import NotificationPermissionBanner from '../NotificationPermissionBanner';
 import Header from './Header';
 import TabNavigation from './TabNavigation';
 import MobileBottomNav from './MobileBottomNav';
@@ -28,6 +29,7 @@ const ProtectedLayout = () => {
                 <div className="content-wrapper">
                     <div className="content p-8 min-h-[600px]">
                         <PWAInstallBanner />
+                        <NotificationPermissionBanner />
                         {/* <Outlet /> is where the specific tab components (like IncidenceForm) will render */}
                         <Outlet />
                     </div>

@@ -71,6 +71,26 @@ const OperatorDashboard = () => {
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 12 }}>
                 <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, padding: 12 }}>
+                    <h3 style={{ margin: '0 0 8px' }}>Pending F203A Items</h3>
+                    {pendingCosigns.length === 0 ? (
+                        <div style={{ color: '#64748b', fontSize: '0.88rem' }}>No F203A co-sign requests.</div>
+                    ) : (
+                        <div style={{ display: 'grid', gap: 8 }}>
+                            {pendingCosigns.slice(0, 5).map((item) => (
+                                <div key={item.id} style={{ border: '1px solid #e2e8f0', borderRadius: 6, padding: 10 }}>
+                                    <div style={{ fontWeight: 700, fontSize: '0.88rem', color: '#0f172a' }}>{item.date}</div>
+                                    <div style={{ color: '#64748b', fontSize: '0.82rem', marginTop: 2 }}>
+                                        Attendant: {item.attendant_name || '—'}
+                                    </div>
+                                    <button onClick={() => navigate('/f203a')} style={{ marginTop: 8, background: '#0369a1', color: '#fff', border: 'none', borderRadius: 6, padding: '6px 10px', cursor: 'pointer', fontSize: '0.8rem' }}>
+                                        Review & Sign
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+                <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, padding: 12 }}>
                     <h3 style={{ margin: '0 0 8px' }}>Sludge Pending Approvals</h3>
                     <div style={{ fontSize: '1.2rem', fontWeight: 700 }}>{pendingSludge.length}</div>
                     <button onClick={() => navigate('/sludge')} style={{ marginTop: 8, background: '#059669', color: '#fff', border: 'none', borderRadius: 6, padding: '6px 10px', cursor: 'pointer' }}>Open Sludge Queue</button>
