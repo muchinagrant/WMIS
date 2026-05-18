@@ -1,0 +1,23 @@
+/* Mobile Bottom Navigation */
+.mobile-bottom-nav {
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* Ensure content doesn't hide behind mobile nav */
+@media (max-width: 768px) {
+    .content-wrapper {
+        padding-bottom: calc(5rem + env(safe-area-inset-bottom));
+    }
+}
+
+/* Ensure tap targets are at least 44px */
+.mobile-bottom-nav a {
+    min-height: 44px;
+    min-width: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}

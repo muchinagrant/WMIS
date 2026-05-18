@@ -42,6 +42,12 @@ class User(AbstractUser):
         blank=True,
         related_name='users'
     )
+    # FCM token for push notifications
+    fcm_token = models.TextField(blank=True, null=True, help_text="Firebase Cloud Messaging token for push notifications")
+    phone_number = models.CharField(max_length=20, blank=True, help_text="User's phone number for notifications")
+    
+    # Assigned zones/areas for line_attendant
+    assigned_zones = models.ManyToManyField('Zone', blank=True, related_name='assigned_attendants', help_text="Zones assigned to this line attendant")
 
     def __str__(self):
         return f"{self.username} ({self.get_role_display()})"
@@ -143,6 +149,41 @@ class Incident(models.Model):
         related_name='received_incidents'
     )
     received_date = models.DateField(null=True, blank=True)
+    
+    # Zone assignment (Section 3.1)
+    zone = models.ForeignKey(
+        'Zone',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='incidents',
+        help_text="Zone/drainage area where the incident occurred"
+    )
+    
+    # Related incident linkage (Section 3.4)
+    related_incident = models.ForeignKey(
+        'self',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='linked_incidents',
+        help_text="Link to a previous incident at the same or related location"
+    )
+    
+    # Assignment metadata (Section 3.5)
+    completed_at = models.DateTimeField(null=True, blank=True, help_text="When the incident repair was completed")
+    certified_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='certified_incidents',
+        help_text="Supervisor who certified the repair"
+    )
+    certified_at = models.DateTimeField(null=True, blank=True, help_text="When the repair was certified")
+    
+    # Assignment instructions (Section 6.3)
+    assignment_instructions = models.TextField(blank=True, help_text="Additional notes from supervisor during assignment")
 
     # Signatures
     foreman_signed_by = models.ForeignKey(
@@ -185,6 +226,14 @@ class Incident(models.Model):
 
     def __str__(self):
         return f"{self.incident_number} - {self.get_category_display()} ({self.get_severity_display()})"
+    
+    @property
+    def resolution_time_minutes(self):
+        """Calculate resolution time in minutes (Section 3.5)."""
+        if self.assigned_at and self.completed_at:
+            delta = self.completed_at - self.assigned_at
+            return int(delta.total_seconds() / 60)
+        return None
 
 
 # --- REPAIR MANAGEMENT MODELS ---
@@ -682,14 +731,29 @@ class SewerLineSection(models.Model):
 
 
 class WeeklyLinePatrol(models.Model):
+    """Model for F201 Weekly Line Patrol with zone-based organization (Section 5)."""
+    STATUS_CHOICES = [
+        ('draft', 'Draft'),
+        ('submitted', 'Submitted'),
+        ('verified', 'Verified'),
+    ]
+    
     date = models.DateField()
     week_number = models.PositiveSmallIntegerField(default=0)
-    drainage_area = models.CharField(max_length=200)
+    zone = models.ForeignKey(
+        'Zone',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='patrols',
+        help_text="Zone/drainage area for this patrol"
+    )
     attendant = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name='patrols')
     status = models.CharField(
         max_length=20,
-        choices=[('submitted', 'Submitted'), ('verified', 'Verified')],
-        default='submitted'
+        choices=STATUS_CHOICES,
+        default='submitted',
+        help_text="draft=not notified, submitted=supervisor notified, verified=supervisor reviewed"
     )
     verified_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -700,15 +764,22 @@ class WeeklyLinePatrol(models.Model):
     )
     verified_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         ordering = ['-date']
+        indexes = [
+            models.Index(fields=['zone', 'status']),
+            models.Index(fields=['attendant', '-date']),
+        ]
 
     def __str__(self):
-        return f"Patrol {self.date} — {self.drainage_area}"
+        zone_name = self.zone.name if self.zone else "Unknown Zone"
+        return f"Patrol {self.date} — {zone_name}"
 
 
 class PatrolRow(models.Model):
+    """Individual patrol row within a weekly patrol log (Section 5)."""
     ABNORMALITY_CHOICES = [
         ('none', 'None'),
         ('erosion', 'Erosion along lines'),
@@ -723,11 +794,17 @@ class PatrolRow(models.Model):
     sewer_line_section = models.ForeignKey(SewerLineSection, on_delete=models.PROTECT, related_name='patrol_rows')
     sewer_line_ref_text = models.CharField(max_length=100)
     abnormality_observed = models.CharField(max_length=50, choices=ABNORMALITY_CHOICES, default='none')
-    abnormality_details = models.TextField(blank=True, help_text="Specify if 'Other' or add details")
-    new_mother_connections = models.PositiveIntegerField(default=0)
-    new_child_connections = models.PositiveIntegerField(default=0)
+    abnormality_details = models.TextField(blank=True, help_text="Specify if 'Other' or add details (Section 5.4)")
+    new_main_connections = models.PositiveIntegerField(default=0, help_text="New main connection found (Section 5.2)")
+    new_branch_connections = models.PositiveIntegerField(default=0, help_text="New branch connection found (Section 5.2)")
     immediate_action_taken = models.TextField(blank=True)
-    further_action_required = models.TextField(blank=True)
+    further_action_required = models.TextField(blank=True, help_text="Actions needed (Section 5.4 - hidden if empty)")
+    photo = models.ImageField(
+        upload_to='patrol_photos/',
+        null=True,
+        blank=True,
+        help_text="Optional photo attachment per row (Section 5.6)"
+    )
     incident_created = models.ForeignKey(
         'Incident',
         on_delete=models.SET_NULL,
@@ -1088,3 +1165,118 @@ class PondYearlyTask(models.Model):
 
     def __str__(self):
         return f"{self.pond.code} — {self.task_name} ({self.year})"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SECTION 3 & 2 BACKEND ADDITIONS: 'Zone', SewerLine, Notification Models
+# ─────────────────────────────────────────────────────────────────────────────
+
+# --- ZONE / DRAINAGE AREA MODEL ---
+class Zone(models.Model):
+    """Zone or drainage area for organizing sewer lines and incident management."""
+    name = models.CharField(max_length=255, unique=True)
+    description = models.TextField(blank=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['name']
+        indexes = [
+            models.Index(fields=['is_active']),
+        ]
+
+    def __str__(self):
+        return self.name
+
+
+# --- SEWER LINE ASSET REGISTRY ---
+class SewerLine(models.Model):
+    """Registry of sewer lines/pipes in the system."""
+    MATERIAL_CHOICES = [
+        ('pvc', 'PVC'),
+        ('ac', 'Asbestos Cement (AC)'),
+        ('hdpe', 'HDPE'),
+        ('ductile_iron', 'Ductile Iron'),
+        ('concrete', 'Concrete'),
+        ('earthenware', 'Earthenware'),
+        ('other', 'Other'),
+    ]
+
+    reference_code = models.CharField(max_length=50, unique=True, help_text="e.g., SL-104")
+    zone = models.ForeignKey('Zone', on_delete=models.PROTECT, related_name='sewer_lines')
+    description = models.TextField(blank=True)
+    start_point = models.CharField(max_length=255, blank=True, help_text="Starting manhole or location")
+    end_point = models.CharField(max_length=255, blank=True, help_text="Ending manhole or location")
+    pipe_material = models.CharField(max_length=50, choices=MATERIAL_CHOICES, blank=True)
+    diameter_mm = models.PositiveIntegerField(null=True, blank=True, help_text="Pipe diameter in millimeters")
+    length_m = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, help_text="Length in meters")
+    installation_date = models.DateField(null=True, blank=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['zone', 'reference_code']
+        indexes = [
+            models.Index(fields=['zone', 'is_active']),
+            models.Index(fields=['reference_code']),
+        ]
+
+    def __str__(self):
+        return f"{self.reference_code} — {self.description or self.zone.name}"
+
+
+# --- NOTIFICATION MODEL ---
+class Notification(models.Model):
+    """Model to store in-app notifications for users."""
+    NOTIFICATION_TYPES = [
+        ('general', 'General'),
+        ('task_assigned', 'Task Assigned'),
+        ('task_completed', 'Task Completed'),
+        ('incident_critical', 'Critical Incident'),
+        ('patrol_submitted', 'Patrol Log Submitted'),
+        ('approval', 'Approval Request'),
+        ('system', 'System Alert'),
+    ]
+
+    recipient = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='notifications'
+    )
+    title = models.CharField(max_length=255)
+    message = models.TextField()
+    notification_type = models.CharField(
+        max_length=50,
+        choices=NOTIFICATION_TYPES,
+        default='general'
+    )
+    is_read = models.BooleanField(default=False)
+    link_url = models.CharField(max_length=500, blank=True, help_text="URL to navigate to when clicked")
+    related_incident = models.ForeignKey(
+        Incident,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='notifications'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    read_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['recipient', 'is_read']),
+            models.Index(fields=['recipient', '-created_at']),
+        ]
+
+    def __str__(self):
+        return f"Notification for {self.recipient.username}: {self.title}"
+    
+    def mark_as_read(self):
+        """Mark this notification as read."""
+        if not self.is_read:
+            self.is_read = True
+            self.read_at = timezone.now()
+            self.save(update_fields=['is_read', 'read_at'])

@@ -19,6 +19,7 @@ from core.models import (
     SewerLineSection, PatrolRow, WeeklyLinePatrol,
     InletWorksDailyTask, DailyFlowRecord, TreatmentParameter, DailyLabRecord,
     MonthlySummarySnapshot, TreatmentPond, PondDailyLog, PondYearlyTask,
+    Zone, SewerLine, Notification,
 )
 from core.permissions import IsLineSupervisorOrAbove, IsSTPOperatorOrAbove, IsSTPSupervisorOrAbove
 from core.api.mixins import LockEnforcementMixin, ExecutiveReadOnlyMixin
@@ -31,6 +32,7 @@ from .serializers import (
     InletWorksDailyTaskSerializer, DailyFlowRecordSerializer,
     DailyLabRecordSerializer, AttachmentSerializer, UserSerializer,
     TreatmentPondSerializer, PondDailyLogSerializer, PondYearlyTaskSerializer,
+    ZoneSerializer, SewerLineSerializer, NotificationSerializer,
 )
 
 # --- CUSTOM AUTHENTICATION VIEW ---
@@ -61,6 +63,8 @@ class IncidentViewSet(ExecutiveReadOnlyMixin, viewsets.ModelViewSet):
     queryset = Incident.objects.all().order_by('-reported_at')
     serializer_class = IncidentSerializer
     permission_classes = [IsAuthenticated]
+    filterset_fields = ['status', 'category', 'severity', 'zone', 'assigned_to']
+    search_fields = ['incident_number', 'location_text', 'reported_by_name', 'description']
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -180,6 +184,29 @@ class IncidentViewSet(ExecutiveReadOnlyMixin, viewsets.ModelViewSet):
         incident.save()
         serializer = self.get_serializer(incident)
         return Response(serializer.data, status=status.HTTP_200_OK)
+    
+    @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated])
+    def search(self, request):
+        """
+        Search for related incidents by location query (Section 4.7).
+        Query parameter: location (string to search in location_text, reported_by_name, description)
+        Returns: List of incidents matching the search, ordered by reported_at descending.
+        """
+        location_query = request.query_params.get('location', '').strip()
+        if not location_query or len(location_query) < 2:
+            return Response({'results': []}, status=status.HTTP_200_OK)
+        
+        # Search incidents by location, reporter name, or description
+        incidents = Incident.objects.filter(
+            Q(location_text__icontains=location_query) |
+            Q(reported_by_name__icontains=location_query) |
+            Q(description__icontains=location_query),
+            status__in=['assigned', 'in_progress', 'pending_certification', 'resolved', 'closed']
+        ).order_by('-reported_at')[:20]  # Limit to 20 results
+        
+        serializer = self.get_serializer(incidents, many=True)
+        return Response({'results': serializer.data}, status=status.HTTP_200_OK)
+
 
 class RepairViewSet(LockEnforcementMixin, ExecutiveReadOnlyMixin, viewsets.ModelViewSet):
     queryset = Repair.objects.all().order_by('-created_at')
@@ -537,9 +564,9 @@ class DailyFlowRecordViewSet(ExecutiveReadOnlyMixin, viewsets.ModelViewSet):
 
 # --- USER VIEWSET ---
 
-class UserViewSet(viewsets.ReadOnlyModelViewSet):
+class UserViewSet(viewsets.ModelViewSet):
     """
-    API endpoint for retrieving user data (read-only).
+    API endpoint for user data management.
     Used by the dispatch dashboard to list available field staff for assignment.
     """
     queryset = User.objects.all()
@@ -550,6 +577,26 @@ class UserViewSet(viewsets.ReadOnlyModelViewSet):
         # For single-company deployments, bypass company filtering
         # TODO: Re-enable multi-company isolation when needed
         return super().get_queryset()
+
+    @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated])
+    def change_password(self, request):
+        """
+        Change password endpoint for authenticated users.
+        Expects: old_password, new_password
+        """
+        user = request.user
+        old_password = request.data.get('old_password')
+        new_password = request.data.get('new_password')
+
+        if not old_password or not new_password:
+            return Response({'error': 'Both old_password and new_password are required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not user.check_password(old_password):
+            return Response({'error': 'Old password is incorrect.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        user.set_password(new_password)
+        user.save()
+        return Response({'message': 'Password changed successfully.'}, status=status.HTTP_200_OK)
 
 
 # --- ATTACHMENT VIEWSET ---
@@ -852,4 +899,77 @@ class SummaryViewSet(APIView):
             'message': f'{calendar.month_name[month]} {year} summary locked successfully.',
             'locked_at': snap.locked_at.isoformat(),
             'locked_by': request.user.get_full_name(),
+        }, status=status.HTTP_200_OK)
+
+
+# --- ZONE VIEWSET (Section 3.1) ---
+
+class ZoneViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    ViewSet for Zone/drainage area model.
+    Provides GET list (active zones) for form dropdowns.
+    """
+    queryset = Zone.objects.filter(is_active=True).order_by('name')
+    serializer_class = ZoneSerializer
+    permission_classes = [IsAuthenticated]
+    filterset_fields = ['is_active']
+    search_fields = ['name', 'description']
+    ordering_fields = ['name', 'created_at']
+
+
+# --- SEWER LINE VIEWSET (Section 3.2) ---
+
+class SewerLineViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    ViewSet for SewerLine asset registry.
+    Provides GET list with zone filtering and search for patrol forms.
+    """
+    queryset = SewerLine.objects.filter(is_active=True).order_by('zone', 'reference_code')
+    serializer_class = SewerLineSerializer
+    permission_classes = [IsAuthenticated]
+    filterset_fields = ['zone', 'is_active', 'pipe_material']
+    search_fields = ['reference_code', 'description', 'start_point', 'end_point']
+    ordering_fields = ['reference_code', 'zone', 'created_at']
+
+
+# --- NOTIFICATION VIEWSET (Section 2) ---
+
+class NotificationViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet for user notifications.
+    Provides GET list, PATCH mark_as_read, and bulk mark_all_read action.
+    """
+    serializer_class = NotificationSerializer
+    permission_classes = [IsAuthenticated]
+    filterset_fields = ['is_read', 'notification_type']
+    search_fields = ['title', 'message']
+    ordering_fields = ['created_at', 'is_read']
+    ordering = ['-created_at']
+    
+    def get_queryset(self):
+        """Return only notifications for the authenticated user."""
+        return Notification.objects.filter(recipient=self.request.user)
+    
+    @action(detail=False, methods=['patch'], permission_classes=[IsAuthenticated])
+    def mark_all_read(self, request):
+        """Mark all unread notifications for the user as read."""
+        notifications = self.get_queryset().filter(is_read=False)
+        count = notifications.update(is_read=True, read_at=timezone.now())
+        return Response({
+            'message': f'{count} notifications marked as read.',
+            'count': count
+        }, status=status.HTTP_200_OK)
+    
+    @action(detail=True, methods=['patch'], permission_classes=[IsAuthenticated])
+    def mark_as_read(self, request, pk=None):
+        """Mark a specific notification as read."""
+        notification = self.get_object()
+        if not notification.is_read:
+            notification.is_read = True
+            notification.read_at = timezone.now()
+            notification.save()
+        return Response({
+            'message': 'Notification marked as read.',
+            'is_read': notification.is_read,
+            'read_at': notification.read_at.isoformat() if notification.read_at else None
         }, status=status.HTTP_200_OK)

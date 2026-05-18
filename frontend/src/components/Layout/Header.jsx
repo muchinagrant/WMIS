@@ -1,5 +1,6 @@
 import React, { useContext } from 'react';
 import AuthContext from '../../context/AuthContext';
+import NotificationBell from '../NotificationBell';
 import './Layout.css';
 
 const Header = () => {
@@ -18,6 +19,10 @@ const Header = () => {
                 {/* Profile & Logout Section - Only renders if user is logged in */}
                 {user && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: '15px', background: 'rgba(0,0,0,0.05)', padding: '8px 15px', borderRadius: '8px' }}>
+                        <NotificationBell />
+                        
+                        <div style={{ height: '30px', width: '1px', background: 'rgba(255,255,255,0.3)' }}></div>
+
                         <div style={{ textAlign: 'right', fontSize: '0.9rem' }}>
                             <span style={{ display: 'block', fontWeight: 'bold' }}>
                                 <i className="fas fa-user-circle" style={{ marginRight: '5px' }}></i> 

@@ -16,7 +16,6 @@ const TabNavigation = ({ orientation = 'horizontal' }) => {
         inlet_works: ['stp_supervisor', 'stp_operator', 'stp_attendant'],
         flow_records: ['stp_supervisor', 'stp_operator', 'stp_attendant'],
         sludge: ['stp_supervisor', 'stp_operator', 'stp_attendant'],
-        connections: ['line_supervisor', 'line_attendant'],
         dispatch: ['line_supervisor', 'line_attendant'],
         lab_records: ['stp_supervisor', 'lab_tech'],
         pond_ops: ['stp_supervisor', 'stp_operator', 'stp_attendant'],
@@ -66,11 +65,6 @@ const TabNavigation = ({ orientation = 'horizontal' }) => {
             {hasAccess('sludge') && (
                 <NavLink to="/sludge" className={({ isActive }) => isActive ? 'tab active' : 'tab'}>
                     <i className="fas fa-truck"></i> Sludge
-                </NavLink>
-            )}
-            {hasAccess('connections') && (
-                <NavLink to="/connections" className={({ isActive }) => isActive ? 'tab active' : 'tab'}>
-                    <i className="fas fa-network-wired"></i> Connections
                 </NavLink>
             )}
             {hasAccess('dispatch') && (

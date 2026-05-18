@@ -10,6 +10,7 @@ from .views import (
     TreatmentPondViewSet, PondDailyLogViewSet, PondYearlyTaskViewSet,
     UserViewSet,
     AttachmentViewSet,
+    ZoneViewSet, SewerLineViewSet, NotificationViewSet,
 )
 
 # Create a router and register our viewsets with it.
@@ -24,6 +25,9 @@ router.register(r'sludge', SludgeCollectionViewSet, basename='sludgecollection')
 router.register(r'connections', ConnectionReportViewSet, basename='connection')
 router.register(r'users', UserViewSet, basename='user')
 router.register(r'attachments', AttachmentViewSet, basename='attachment')
+router.register(r'zones', ZoneViewSet, basename='zone')
+router.register(r'sewer-lines', SewerLineViewSet, basename='sewerline')
+router.register(r'notifications', NotificationViewSet, basename='notification')
 
 # Registering the new operational templates
 router.register(r'sewer-line-sections', SewerLineSectionViewSet, basename='sewerlinesection')

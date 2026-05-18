@@ -1,6 +1,6 @@
 {
   "short_name": "KICOWASCO",
-  "name": "KICOWASCO Wastewater Management System",
+  "name": "KICOWASCO Wastewater System",
   "icons": [
     {
       "src": "favicon.ico",
@@ -10,16 +10,20 @@
     {
       "src": "logo192.png",
       "type": "image/png",
-      "sizes": "192x192"
+      "sizes": "192x192",
+      "purpose": "any"
     },
     {
       "src": "logo512.png",
       "type": "image/png",
-      "sizes": "512x512"
+      "sizes": "512x512",
+      "purpose": "any"
     }
   ],
-  "start_url": ".",
+  "start_url": "./",
   "display": "standalone",
+  "orientation": "portrait-primary",
   "theme_color": "#1a6fb0",
-  "background_color": "#f5f7fa"
+  "background_color": "#ffffff",
+  "scope": "./"
 }

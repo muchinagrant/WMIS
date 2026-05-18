@@ -1,0 +1,15 @@
+Resource,stp_superintendent,stp_supervisor,lab_tech,stp_operator,stp_attendant,line_supervisor,line_attendant,admin
+Incidence,View(via-drill)/Audit,View/Assign/Edit,View(when involved),View(plant-impact),None,View/Assign/Approve,Create/Edit own,Manage
+Repairs,View/Audit,View/Edit/Approve,View(when involved),View/Edit(tech work),Create draft,View/Approve/Sign,Create/Edit own,Manage/Correct
+Dispatch,View,View/Assign,View,View own assignments,View own assignments,Assign/Reassign,View own assignments,Manage
+Treatment Logs,View,Review/Co-sign,Verify/View,Create/Edit/Submit,Create draft/submit to operator,View(plant-impact),None,Manage templates
+Lab Tests,View,View/RequestRetest,Create/Edit/Verify,View results,View results,View,View results,Manage
+Monthly Summary,View,Propose/Compile,Provide data,Provide data,Provide data,View,View,Manage/Export
+Sewer Connections,View,Verify/Approve,View,View,Create site details,Verify/Approve,Create site details,Manage
+Inspection Log,View,Create/Approve,View,View,Create draft,Create/Approve,Create draft,Manage
+Pond Maintenance,View,Review/Verify,View,Edit/Record,Create/Edit,View,View,Manage
+Sludge Manifest,View,Verify/Sign,View,Record receipt,Record receipt,Verify/Sign,Record receipt,Manage
+User Profile,View/Edit own,View/Edit own,View/Edit own,View/Edit own,View/Edit own,View/Edit team,View/Edit own,Manage all
+User Management,None,None,None,None,None,None,None,Manage
+
+Notes: Cells list allowed actions; 'None' = no default access; 'View(via-drill)' = accessible only through KPI/alert drill-downs; admin has management/export rights but should use 'Support Mode' when viewing live operational edits.

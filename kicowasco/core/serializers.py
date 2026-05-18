@@ -7,6 +7,7 @@ from .models import (
     SewerLineSection, PatrolRow, WeeklyLinePatrol, InletWorksDailyTask,
     DailyFlowRecord, FlowReading, DailyLabRecord,
     TreatmentPond, PondDailyLog, PondYearlyTask,
+    Zone, SewerLine, Notification,
 )
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
@@ -448,6 +449,8 @@ class RepairSerializer(serializers.ModelSerializer):
 class IncidentSerializer(serializers.ModelSerializer):
     assigned_to_name = serializers.ReadOnlyField(source='assigned_to.get_full_name')
     created_by_name = serializers.ReadOnlyField(source='created_by.get_full_name')
+    certified_by_name = serializers.ReadOnlyField(source='certified_by.get_full_name')
+    zone_name = serializers.ReadOnlyField(source='zone.name')
     duplicate_of_number = serializers.ReadOnlyField(source='duplicate_of.incident_number')
     repairs = RepairSerializer(many=True, read_only=True)
     attachments = AttachmentSerializer(many=True, read_only=True)
@@ -462,11 +465,16 @@ class IncidentSerializer(serializers.ModelSerializer):
             'assigned_to', 'assigned_to_name', 'received_by', 'received_date',
             'foreman_signed_by', 'foreman_signature_image', 'created_by',
             'source_module', 'source_reference_id',
+            'zone', 'zone_name', 'related_incident',
+            'assigned_at', 'in_progress_at', 'resolved_at',
+            'completed_at', 'certified_by', 'certified_by_name', 'certified_at',
+            'assignment_instructions',
             'created_by_name', 'created_at', 'updated_at', 'repairs', 'attachments',
         ]
         read_only_fields = [
             'incident_number', 'duplicate_of', 'duplicate_of_number',
-            'rejection_reason', 'created_at', 'updated_at',
+            'rejection_reason', 'created_at', 'updated_at', 'zone_name', 'certified_by_name',
+            'assigned_to_name', 'created_by_name',
         ]
 
 
@@ -479,7 +487,8 @@ class UserSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = User
-        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'full_name', 'role', 'company', 'company_name', 'company_code']
+        fields = ['id', 'username', 'email', 'phone_number', 'first_name', 'last_name', 'full_name', 'role', 'company', 'company_name', 'company_code']
+        read_only_fields = ['id', 'username', 'full_name', 'company_name', 'company_code', 'role', 'company']
 
 
 class UserProfileSerializer(serializers.ModelSerializer):
@@ -550,17 +559,26 @@ class PatrolRowSerializer(serializers.ModelSerializer):
     section_code = serializers.ReadOnlyField(source='sewer_line_section.code')
     section_is_confirmed = serializers.ReadOnlyField(source='sewer_line_section.is_confirmed')
     incident_id = serializers.ReadOnlyField(source='incident_created.id')
+    photo_url = serializers.SerializerMethodField()
 
     class Meta:
         model = PatrolRow
         fields = [
             'id', 'time', 'sewer_line_section', 'section_code', 'section_is_confirmed',
             'sewer_line_ref_text', 'abnormality_observed', 'abnormality_details',
-            'new_mother_connections', 'new_child_connections',
+            'new_main_connections', 'new_branch_connections',
             'immediate_action_taken', 'further_action_required',
+            'photo', 'photo_url',
             'incident_created', 'incident_id', 'created_at',
         ]
-        read_only_fields = ['incident_created', 'incident_id', 'created_at']
+        read_only_fields = ['incident_created', 'incident_id', 'created_at', 'photo_url']
+
+    def get_photo_url(self, obj):
+        """Return absolute URL for photo if it exists."""
+        request = self.context.get('request')
+        if obj.photo and request:
+            return request.build_absolute_uri(obj.photo.url)
+        return None
 
     def update(self, instance, validated_data):
         if instance.incident_created_id:
@@ -571,16 +589,17 @@ class PatrolRowSerializer(serializers.ModelSerializer):
 class WeeklyLinePatrolSerializer(serializers.ModelSerializer):
     attendant_name = serializers.ReadOnlyField(source='attendant.get_full_name')
     verified_by_name = serializers.ReadOnlyField(source='verified_by.get_full_name')
+    zone_name = serializers.ReadOnlyField(source='zone.name')
     rows = PatrolRowSerializer(many=True)
 
     class Meta:
         model = WeeklyLinePatrol
         fields = [
-            'id', 'date', 'week_number', 'drainage_area', 'attendant', 'attendant_name',
+            'id', 'date', 'week_number', 'zone', 'zone_name', 'attendant', 'attendant_name',
             'status', 'verified_by', 'verified_by_name', 'verified_at',
-            'rows', 'created_at',
+            'rows', 'created_at', 'updated_at',
         ]
-        read_only_fields = ['created_at', 'week_number', 'verified_by', 'verified_at']
+        read_only_fields = ['created_at', 'updated_at', 'week_number', 'verified_by', 'verified_at']
 
     def create(self, validated_data):
         rows_data = validated_data.pop('rows', [])
@@ -774,3 +793,57 @@ class PondYearlyTaskSerializer(serializers.ModelSerializer):
             'completed_at', 'notes', 'created_at',
         ]
         read_only_fields = ['created_at']
+
+
+# --- ZONE SERIALIZER (Section 3.1) ---
+
+class ZoneSerializer(serializers.ModelSerializer):
+    """Serializer for Zone/drainage area model."""
+    
+    class Meta:
+        model = Zone
+        fields = ['id', 'name', 'description', 'is_active', 'created_at', 'updated_at']
+        read_only_fields = ['created_at', 'updated_at']
+
+
+# --- SEWER LINE SERIALIZER (Section 3.2) ---
+
+class SewerLineSerializer(serializers.ModelSerializer):
+    """Serializer for SewerLine asset registry."""
+    zone_name = serializers.ReadOnlyField(source='zone.name')
+    
+    class Meta:
+        model = SewerLine
+        fields = [
+            'id', 'reference_code', 'zone', 'zone_name', 'description',
+            'start_point', 'end_point', 'pipe_material', 'diameter_mm',
+            'length_m', 'installation_date', 'is_active',
+            'created_at', 'updated_at'
+        ]
+        read_only_fields = ['created_at', 'updated_at']
+
+
+# --- NOTIFICATION SERIALIZER (Section 2) ---
+
+class NotificationSerializer(serializers.ModelSerializer):
+    """Serializer for user notifications with read status tracking."""
+    recipient_username = serializers.ReadOnlyField(source='recipient.username')
+    incident_reference = serializers.ReadOnlyField(source='related_incident.incident_number')
+    
+    class Meta:
+        model = Notification
+        fields = [
+            'id', 'recipient', 'recipient_username', 'title', 'message',
+            'notification_type', 'is_read', 'link_url', 'related_incident',
+            'incident_reference', 'created_at', 'read_at'
+        ]
+        read_only_fields = ['recipient', 'created_at']
+    
+    def update(self, instance, validated_data):
+        """Handle marking notification as read."""
+        if validated_data.get('is_read') and not instance.is_read:
+            # Mark as read with timestamp
+            instance.is_read = True
+            instance.read_at = timezone.now()
+        instance.save()
+        return instance
