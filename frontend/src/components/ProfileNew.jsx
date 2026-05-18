@@ -7,7 +7,6 @@ import AuthContext from '../context/AuthContext';
 const ProfileNew = () => {
     const { user } = useContext(AuthContext);
     const [profileData, setProfileData] = useState(null);
-    const [loading, setLoading] = useState(false);
     const [editingAccount, setEditingAccount] = useState(false);
     const [changingPassword, setChangingPassword] = useState(false);
     const [teamData, setTeamData] = useState([]);
@@ -20,6 +19,7 @@ const ProfileNew = () => {
             loadProfileData();
             loadStats();
         }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [user?.id]);
 
     const loadProfileData = async () => {

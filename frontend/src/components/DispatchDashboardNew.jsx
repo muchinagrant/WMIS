@@ -19,14 +19,6 @@ const DispatchDashboardNew = () => {
     const [certificationModal, setCertificationModal] = useState(null);
     const [certNotes, setCertNotes] = useState('');
     const { user } = useContext(AuthContext);
-    const { addToQueue } = useContext(SyncContext);
-
-    const statusMapping = {
-        unassigned: 'new',
-        in_progress: ['assigned', 'in_progress'],
-        pending_certification: 'pending_certification',
-        history: 'closed',
-    };
 
     const priorityColors = {
         high: '#DC2626',
@@ -121,18 +113,6 @@ const DispatchDashboardNew = () => {
                     data: { status: 'assigned', assigned_to: values.lead_plumber },
                 });
             }
-        }
-    };
-
-    const handleStartWork = async (incidentId) => {
-        try {
-            await api.patch(`/api/incidents/${incidentId}/`, {
-                status: 'in_progress',
-                in_progress_at: new Date().toISOString(),
-            });
-            loadIncidents();
-        } catch (error) {
-            console.error('Failed to start work:', error);
         }
     };
 

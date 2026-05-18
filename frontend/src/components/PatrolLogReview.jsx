@@ -1,6 +1,5 @@
-import React, { useContext, useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import api from '../api/axios';
-import AuthContext from '../context/AuthContext';
 
 const PatrolLogReview = () => {
     const [patrols, setPatrols] = useState([]);
@@ -11,7 +10,6 @@ const PatrolLogReview = () => {
     const [expandedPatrol, setExpandedPatrol] = useState(null);
     const [reviewingPatrol, setReviewingPatrol] = useState(null);
     const [acknowledgmentNotes, setAcknowledgmentNotes] = useState('');
-    const { user } = useContext(AuthContext);
 
     // Load zones
     useEffect(() => {
@@ -30,6 +28,7 @@ const PatrolLogReview = () => {
     // Load patrol logs
     useEffect(() => {
         loadPatrols();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [filterStatus, filterZone]);
 
     const loadPatrols = async () => {
@@ -247,7 +246,7 @@ const PatrolLogReview = () => {
                                                         <div style={{ marginTop: '10px' }}>
                                                             <img
                                                                 src={row.photo_url}
-                                                                alt="patrol photo"
+                                                                alt="Patrol inspection photo"
                                                                 style={{
                                                                     maxWidth: '100%',
                                                                     maxHeight: '200px',

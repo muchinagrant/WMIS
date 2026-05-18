@@ -33,6 +33,7 @@ const MyTasksNew = () => {
     // Load user's tasks
     useEffect(() => {
         loadTasks();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [user?.id]);
 
     const loadTasks = async () => {

@@ -3,7 +3,6 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import AuthContext, { AuthProvider } from './context/AuthContext';
 import { wakeUpServer } from './api/axios';
 import { getLandingRoute } from './config/roleRouting';
-import PWAInstallBanner from './components/PWAInstallBanner';
 
 // Import Pages & Layouts
 import Login from './pages/Login';
@@ -12,7 +11,6 @@ import ProtectedLayout from './components/Layout/ProtectedLayout';
 // Import Operational Form Components
 import IncidenceForm from './components/IncidenceFormNew';
 import RepairForm from './components/RepairForm';
-import InspectionTable from './components/InspectionTable';
 import WeeklyPatrolForm from './components/WeeklyPatrolForm';
 import PatrolLogReview from './components/PatrolLogReview';
 import TreatmentLogForm from './components/TreatmentLogForm';

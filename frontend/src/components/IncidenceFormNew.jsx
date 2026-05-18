@@ -3,7 +3,6 @@ import { Formik, Form, Field, ErrorMessage } from 'formik';
 import * as Yup from 'yup';
 import api from '../api/axios';
 import { SyncContext } from '../context/SyncContext';
-import { addToQueue } from '../api/offlineQueue';
 import AuthContext from '../context/AuthContext';
 
 // Enhanced Validation Schema (Section 4)
@@ -35,13 +34,12 @@ const IncidenceForm = () => {
   const [submitStatus, setSubmitStatus] = useState({ type: '', message: '' });
   const [zones, setZones] = useState([]);
   const [relatedIncidents, setRelatedIncidents] = useState([]);
-  const [showIncidentSearch, setShowIncidentSearch] = useState(false);
   const [incidentSearchQuery, setIncidentSearchQuery] = useState('');
   const [mapPreview, setMapPreview] = useState(null);
   const [photoList, setPhotoList] = useState([]);
   const [successIncident, setSuccessIncident] = useState(null);
   
-  const { isOnline, refreshQueueCount } = useContext(SyncContext);
+  const { isOnline } = useContext(SyncContext);
   const { user } = useContext(AuthContext);
 
   // Fetch zones on mount
