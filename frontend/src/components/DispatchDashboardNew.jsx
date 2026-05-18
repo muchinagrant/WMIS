@@ -2,7 +2,6 @@ import React, { useContext, useEffect, useState } from 'react';
 import { Formik, Form, Field, ErrorMessage } from 'formik';
 import * as Yup from 'yup';
 import api from '../api/axios';
-import AuthContext from '../context/AuthContext';
 import { SyncContext } from '../context/SyncContext';
 
 const DispatchDashboardNew = () => {
@@ -18,7 +17,6 @@ const DispatchDashboardNew = () => {
     const [selectedIncident, setSelectedIncident] = useState(null);
     const [certificationModal, setCertificationModal] = useState(null);
     const [certNotes, setCertNotes] = useState('');
-    const { user } = useContext(AuthContext);
     const { addToQueue } = useContext(SyncContext);
 
     const priorityColors = {

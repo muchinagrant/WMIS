@@ -61,14 +61,20 @@ const PWAInstallBanner = () => {
     const timer = setTimeout(async () => {
       setAutoPrompted(true);
       try {
-        await handleInstall();
+        deferredPrompt.prompt();
+        const { outcome } = await deferredPrompt.userChoice;
+        if (outcome === 'accepted') {
+          setShowBanner(false);
+          localStorage.removeItem('pwa_install_dismissed_at');
+        }
+        setDeferredPrompt(null);
       } catch {
         // Browser may block automatic prompt invocation; banner remains available.
       }
     }, 1200);
 
     return () => clearTimeout(timer);
-  }, [deferredPrompt, showBanner, autoPrompted]);
+  }, [deferredPrompt, showBanner, autoPrompted]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleDismiss = () => {
     localStorage.setItem('pwa_install_dismissed_at', Date.now().toString());
