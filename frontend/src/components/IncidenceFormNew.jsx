@@ -34,7 +34,6 @@ const IncidenceForm = () => {
   const [submitStatus, setSubmitStatus] = useState({ type: '', message: '' });
   const [zones, setZones] = useState([]);
   const [relatedIncidents, setRelatedIncidents] = useState([]);
-  const [showIncidentSearch, setShowIncidentSearch] = useState(false);
   const [incidentSearchQuery, setIncidentSearchQuery] = useState('');
   const [mapPreview, setMapPreview] = useState(null);
   const [photoList, setPhotoList] = useState([]);
@@ -843,7 +842,7 @@ const IncidenceForm = () => {
                         key={inc.id}
                         onClick={() => {
                           setFieldValue('related_incident_id', inc.id);
-                          setShowIncidentSearch(false);
+                          // Incident search closed
                         }}
                         style={{
                           padding: '10px',

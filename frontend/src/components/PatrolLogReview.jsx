@@ -246,7 +246,7 @@ const PatrolLogReview = () => {
                                                         <div style={{ marginTop: '10px' }}>
                                                             <img
                                                                 src={row.photo_url}
-                                                                alt="Patrol inspection photo"
+                                                                alt="Patrol inspection"
                                                                 style={{
                                                                     maxWidth: '100%',
                                                                     maxHeight: '200px',

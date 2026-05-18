@@ -47,10 +47,7 @@ const WeeklyPatrolForm = () => {
     const [sewerLines, setSewerLines] = useState([]);
     const [submittedPatrol, setSubmittedPatrol] = useState(null);
     const [draftPatrol, setDraftPatrol] = useState(null);
-    const [currentZone, setCurrentZone] = useState(null);
     const { isOnline, refreshQueueCount } = useContext(SyncContext);
-    const { user } = useContext(AuthContext);
-    const userRole = user?.role || '';
 
     // Load zones on mount
     useEffect(() => {
@@ -99,14 +96,12 @@ const WeeklyPatrolForm = () => {
     const loadSewerLines = async (zoneId) => {
         if (!zoneId) {
             setSewerLines([]);
-            setCurrentZone(null);
             return;
         }
         try {
             const response = await api.get(`/api/sewer-lines/?zone=${zoneId}&is_active=true`);
             const linesList = Array.isArray(response.data) ? response.data : (response.data?.results || []);
             setSewerLines(linesList);
-            setCurrentZone(zoneId);
         } catch (error) {
             setSewerLines([]);
         }
