@@ -3,7 +3,7 @@ import { Formik, Form, Field, ErrorMessage } from 'formik';
 import * as Yup from 'yup';
 import api from '../api/axios';
 import AuthContext from '../context/AuthContext';
-import SyncContext from '../context/SyncContext';
+import { SyncContext } from '../context/SyncContext';
 
 const DispatchDashboardNew = () => {
     const [activeTab, setActiveTab] = useState('unassigned');
