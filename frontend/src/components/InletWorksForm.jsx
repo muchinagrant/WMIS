@@ -376,7 +376,7 @@ const AttendantF203ADailyCard = ({ isOnline, refreshQueueCount, loadRecords, rec
             abnormalities: todayRecord.abnormalities || '',
             shift_notes: todayRecord.shift_notes || '',
         }));
-    }, [todayRecord?.id]);
+    }, [todayRecord?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const setField = (key, value) => setDraft((current) => ({ ...current, [key]: value }));
 

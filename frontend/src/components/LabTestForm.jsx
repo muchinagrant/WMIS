@@ -35,7 +35,6 @@ const NUMERIC_FIELDS = [
     'sludge_volume_m3',
 ];
 
-const todayStr = () => new Date().toISOString().slice(0, 10);
 
 const emptyForm = () => NUMERIC_FIELDS.reduce((acc, key) => {
     acc[key] = '';
@@ -88,7 +87,7 @@ const LabTestForm = () => {
     const [retestNote, setRetestNote] = useState('');
     const [retestOpen, setRetestOpen] = useState(false);
 
-    const now = new Date();
+    const now = useMemo(() => new Date(), []);
     const focusToday = location.state?.focusToday;
     const [selectedYear, setSelectedYear] = useState(now.getFullYear());
     const [selectedMonth, setSelectedMonth] = useState(now.getMonth() + 1);
@@ -138,7 +137,7 @@ const LabTestForm = () => {
             setSelectedMonth(now.getMonth() + 1);
             setSelectedDay(now.getDate());
         }
-    }, [focusToday, now]);
+    }, [focusToday, now]); // eslint-disable-line react-hooks/exhaustive-deps
 
     useEffect(() => {
         if (selectedDay > daysInMonth) {
@@ -148,7 +147,7 @@ const LabTestForm = () => {
 
     useEffect(() => {
         setDraft(recordToForm(selectedRecord));
-    }, [selectedRecord?.id]);
+    }, [selectedRecord?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const openDay = (day) => setSelectedDay(day);
     const jumpToToday = () => {

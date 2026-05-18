@@ -335,7 +335,7 @@ const AttendantF203CDailyCard = ({ isOnline, refreshQueueCount, loadRecords, rec
                 };
             }),
         });
-    }, [todayRecord?.id]);
+    }, [todayRecord?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const slotValue = (slot, key) => draft.readings.find((reading) => reading.time_slot === slot)?.[key] ?? '';
 
