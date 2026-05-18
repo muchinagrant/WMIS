@@ -208,8 +208,8 @@ class Command(BaseCommand):
                 sewer_line_section=area_section_map[drainage_area],
                 sewer_line_ref_text=f"SL-{random.randint(100, 999)}",
                 abnormality_observed=random.choice(["none", "none", "blockage", "missing_cover"]),
-                new_mother_connections=random.randint(0, 2),
-                new_child_connections=random.randint(0, 3),
+                new_main_connections=random.randint(0, 2),
+                new_branch_connections=random.randint(0, 3),
             )
 
             # C2. Pond Daily Logs

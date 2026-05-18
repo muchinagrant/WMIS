@@ -23,6 +23,11 @@ import LabTestForm from './components/LabTestForm';
 import PondMaintenanceLogs from './components/PondMaintenanceLogs';
 import FlowRecordsForm from './components/FlowRecordsForm';
 import InletWorksForm from './components/InletWorksForm';
+import LabAlerts from './components/LabAlerts';
+import AttendantDashboard from './components/AttendantDashboard';
+import OperatorDashboard from './components/OperatorDashboard';
+import LabDashboard from './components/LabDashboard';
+import SupervisorDashboard from './components/SupervisorDashboard';
 
 const RoleRoute = ({ element, allowedRoles }) => {
   const { user } = useContext(AuthContext);
@@ -54,10 +59,11 @@ const AppRoutes = () => {
 
           <Route path="/portal/field" element={<RoleRoute allowedRoles={['line_attendant']} element={<Navigate to="/dispatch" replace />} />} />
           <Route path="/portal/line-supervisor" element={<RoleRoute allowedRoles={['line_supervisor']} element={<Navigate to="/dispatch" replace />} />} />
-          <Route path="/portal/attendant" element={<RoleRoute allowedRoles={['stp_attendant']} element={<Navigate to="/treatment" replace />} />} />
-          <Route path="/portal/operator" element={<RoleRoute allowedRoles={['stp_operator']} element={<Navigate to="/treatment" replace />} />} />
-          <Route path="/portal/lab" element={<RoleRoute allowedRoles={['lab_tech']} element={<Navigate to="/lab-records" replace />} />} />
-          <Route path="/portal/supervisor" element={<RoleRoute allowedRoles={['stp_supervisor']} element={<Navigate to="/treatment" replace />} />} />
+          <Route path="/portal/attendant" element={<RoleRoute allowedRoles={['stp_attendant']} element={<AttendantDashboard />} />} />
+          <Route path="/portal/operator" element={<RoleRoute allowedRoles={['stp_operator']} element={<OperatorDashboard />} />} />
+          <Route path="/portal/lab" element={<RoleRoute allowedRoles={['lab_tech']} element={<LabDashboard />} />} />
+          <Route path="/portal/supervisor" element={<RoleRoute allowedRoles={['stp_supervisor']} element={<SupervisorDashboard />} />} />
+          <Route path="/team" element={<RoleRoute allowedRoles={['stp_supervisor']} element={<SupervisorDashboard defaultTab="team" />} />} />
           <Route path="/portal/superintendent" element={<RoleRoute allowedRoles={['stp_superintendent']} element={<Navigate to="/summary" replace />} />} />
           <Route path="/portal/admin" element={<RoleRoute allowedRoles={['admin']} element={<Navigate to="/summary" replace />} />} />
 
@@ -65,14 +71,15 @@ const AppRoutes = () => {
           <Route path="/repairs" element={<RoleRoute allowedRoles={['line_supervisor', 'line_attendant']} element={<RepairForm />} />} />
           <Route path="/inspection" element={<RoleRoute allowedRoles={['line_supervisor', 'line_attendant']} element={<WeeklyPatrolForm />} />} />
           <Route path="/patrol-review" element={<RoleRoute allowedRoles={['line_supervisor', 'stp_supervisor']} element={<PatrolLogReview />} />} />
-          <Route path="/treatment" element={<RoleRoute allowedRoles={['stp_supervisor', 'stp_operator', 'stp_attendant']} element={<TreatmentLogForm />} />} />
+          <Route path="/treatment" element={<RoleRoute allowedRoles={['stp_supervisor', 'stp_operator', 'lab_tech']} element={<TreatmentLogForm />} />} />
           <Route path="/f203a" element={<RoleRoute allowedRoles={['stp_supervisor', 'stp_operator', 'stp_attendant']} element={<InletWorksForm />} />} />
           <Route path="/flow-records" element={<RoleRoute allowedRoles={['stp_supervisor', 'stp_operator', 'stp_attendant']} element={<FlowRecordsForm />} />} />
           <Route path="/sludge" element={<RoleRoute allowedRoles={['stp_supervisor', 'stp_operator', 'stp_attendant']} element={<SludgeManifest />} />} />
           <Route path="/dispatch" element={<RoleRoute allowedRoles={['line_supervisor', 'stp_supervisor']} element={<DispatchDashboardNew />} />} />
           <Route path="/my-tasks" element={<RoleRoute allowedRoles={['line_attendant']} element={<MyTasksNew />} />} />
-          <Route path="/lab-records" element={<RoleRoute allowedRoles={['stp_supervisor', 'lab_tech']} element={<LabTestForm />} />} />
-          <Route path="/ponds" element={<RoleRoute allowedRoles={['stp_supervisor', 'stp_operator', 'stp_attendant']} element={<PondMaintenanceLogs />} />} />
+          <Route path="/lab-records" element={<RoleRoute allowedRoles={['stp_supervisor', 'lab_tech', 'stp_operator']} element={<LabTestForm />} />} />
+          <Route path="/ponds" element={<RoleRoute allowedRoles={['stp_supervisor', 'stp_operator', 'stp_attendant', 'lab_tech']} element={<PondMaintenanceLogs />} />} />
+          <Route path="/alerts" element={<RoleRoute allowedRoles={['stp_operator', 'stp_supervisor', 'lab_tech']} element={<LabAlerts />} />} />
           <Route path="/summary" element={<RoleRoute allowedRoles={['admin', 'stp_superintendent', 'stp_supervisor']} element={<MonthlySummary />} />} />
           <Route path="/profile" element={<RoleRoute allowedRoles={['admin', 'stp_superintendent', 'stp_supervisor', 'lab_tech', 'stp_operator', 'stp_attendant', 'line_supervisor', 'line_attendant']} element={<ProfileNew />} />} />
         </Route>

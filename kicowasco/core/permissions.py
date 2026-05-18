@@ -12,6 +12,28 @@ class IsSTPOperatorOrAbove(BasePermission):
         )
 
 
+class IsSTPOperator(BasePermission):
+    allowed = ['stp_operator']
+
+    def has_permission(self, request, view):
+        return bool(
+            request.user and
+            request.user.is_authenticated and
+            getattr(request.user, 'role', '') in self.allowed
+        )
+
+
+class IsSTPOperatorOrLabTech(BasePermission):
+    allowed = ['stp_operator', 'lab_tech']
+
+    def has_permission(self, request, view):
+        return bool(
+            request.user and
+            request.user.is_authenticated and
+            getattr(request.user, 'role', '') in self.allowed
+        )
+
+
 class IsSTPSupervisorOrAbove(BasePermission):
     allowed = ['stp_supervisor']
 

@@ -15,6 +15,7 @@ from core.serializers import (
     SewerLineSectionSerializer, PatrolRowSerializer,
     InletWorksDailyTaskSerializer, DailyFlowRecordSerializer, FlowReadingSerializer,
     DailyLabRecordSerializer,
+    LabComplianceFlagSerializer,
     TreatmentPondSerializer, PondDailyLogSerializer, PondYearlyTaskSerializer,
     AttachmentSerializer, ZoneSerializer, SewerLineSerializer, NotificationSerializer,
 )
@@ -31,6 +32,7 @@ __all__ = [
     'CustomTokenObtainPairSerializer', 'WeeklyLinePatrolSerializer', 'SewerLineSectionSerializer', 'PatrolRowSerializer',
     'InletWorksDailyTaskSerializer', 'DailyFlowRecordSerializer', 'FlowReadingSerializer',
     'DailyLabRecordSerializer',
+    'LabComplianceFlagSerializer',
     'TreatmentPondSerializer', 'PondDailyLogSerializer', 'PondYearlyTaskSerializer',
     'AttachmentSerializer', 'ZoneSerializer', 'SewerLineSerializer', 'NotificationSerializer',
 ]

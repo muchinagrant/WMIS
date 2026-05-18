@@ -501,7 +501,7 @@ class SludgeCollection(models.Model):
     
     MANIFEST_STATUS_CHOICES = [
         ('pending', 'Pending'),
-        ('received', 'Received'),
+        ('approved', 'Approved'),
         ('rejected', 'Rejected'),
     ]
 
@@ -534,6 +534,14 @@ class SludgeCollection(models.Model):
         blank=True,
         related_name='collections_driven'
     )
+    entered_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='collections_entered',
+        help_text='Authenticated user who entered the driver/origin section.'
+    )
     received_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -544,6 +552,14 @@ class SludgeCollection(models.Model):
     received_at = models.DateTimeField(null=True, blank=True)
     receiving_notes = models.TextField(blank=True, help_text="Notes from receiving officer")
     rejection_reason = models.TextField(blank=True)
+    rejected_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='collections_rejected'
+    )
+    rejected_at = models.DateTimeField(null=True, blank=True)
 
     # Status and tracking
     manifest_status = models.CharField(
@@ -583,6 +599,25 @@ class TreatmentLog(models.Model):
         default=False, 
         help_text="Flagged if parameters exceed regulatory thresholds"
     )
+    review_status = models.CharField(
+        max_length=30,
+        choices=[
+            ('pending_review', 'Pending Supervisor Review'),
+            ('correction_requested', 'Correction Requested'),
+            ('supervisor_approved', 'Supervisor Approved'),
+        ],
+        default='pending_review',
+    )
+    supervisor_comment = models.TextField(blank=True)
+    correction_note = models.TextField(blank=True)
+    reviewed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='treatment_logs_reviewed',
+    )
+    reviewed_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -752,7 +787,7 @@ class WeeklyLinePatrol(models.Model):
     status = models.CharField(
         max_length=20,
         choices=STATUS_CHOICES,
-        default='submitted',
+        default='draft',
         help_text="draft=not notified, submitted=supervisor notified, verified=supervisor reviewed"
     )
     verified_by = models.ForeignKey(
@@ -834,6 +869,13 @@ class InletWorksDailyTask(models.Model):
     t1_grit_buried = models.BooleanField(default=False)
     t2_screenings_buried = models.BooleanField(default=False)
     shift_notes = models.TextField(blank=True)
+
+    raking_t1_reason = models.TextField(blank=True)
+    raking_t2_reason = models.TextField(blank=True)
+    raking_t3_reason = models.TextField(blank=True)
+    screenings_burial_reason = models.TextField(blank=True)
+    grit_scooping_reason = models.TextField(blank=True)
+    grit_burial_reason = models.TextField(blank=True)
     
     screenings_burial = models.BooleanField(default=False)
     grit_scooping = models.BooleanField(default=False)
@@ -852,9 +894,15 @@ class InletWorksDailyTask(models.Model):
     submitted_at = models.DateTimeField(auto_now_add=True)
     status = models.CharField(
         max_length=20,
-        choices=[('submitted', 'Submitted'), ('verified', 'Verified')],
-        default='submitted'
+        choices=[
+            ('draft', 'Draft'),
+            ('pending_operator', 'Pending Operator Co-sign'),
+            ('returned', 'Returned for Correction'),
+            ('fully_signed', 'Fully Signed')
+        ],
+        default='draft'
     )
+    correction_note = models.TextField(blank=True)
     verified_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -878,19 +926,8 @@ class DailyFlowRecord(models.Model):
     attendants = models.ManyToManyField(settings.AUTH_USER_MODEL, related_name='flow_records')
     remarks = models.TextField(blank=True)
     submitted_at = models.DateTimeField(auto_now_add=True)
-    status = models.CharField(
-        max_length=20,
-        choices=[('submitted', 'Submitted'), ('verified', 'Verified')],
-        default='submitted'
-    )
-    verified_by = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name='verified_flow_records'
-    )
-    verified_at = models.DateTimeField(null=True, blank=True)
+    operator_note = models.TextField(blank=True)
+    supervisor_note = models.TextField(blank=True)
 
     @property
     def average_daily_flow(self):
@@ -948,9 +985,15 @@ class DailyLabRecord(models.Model):
     # Influent (Inflow) Parameters — D
     inflow_ph = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
     inflow_temperature = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    inflow_volume_m3 = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True)
     inflow_tss = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True, help_text='mg/L — D')
     inflow_bod = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True, help_text='mg/L — 2W')
     inflow_cod = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True, help_text='mg/L — W')
+    inflow_do = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True, help_text='Dissolved Oxygen mg/L')
+    inflow_turbidity = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True, help_text='NTU')
+    inflow_conductivity = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, help_text='uS/cm')
+    inflow_nitrates = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True, help_text='Nitrates mg/L')
+    inflow_phosphates = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True, help_text='Phosphates mg/L')
     inflow_tn = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True, help_text='Total Nitrogen mg/L — M')
     inflow_tp = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True, help_text='Total Phosphorus mg/L — M')
     inflow_fc = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True, help_text='Fecal Coliforms CFU/100mL — W')
@@ -958,12 +1001,18 @@ class DailyLabRecord(models.Model):
     # Effluent (Outflow) Parameters — same frequencies as inflow
     effluent_ph = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
     effluent_temperature = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    effluent_volume_m3 = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True)
     effluent_tss = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True, help_text='mg/L — D')
     effluent_bod = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True, help_text='mg/L — 2W')
     effluent_cod = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True, help_text='mg/L — W')
+    effluent_conductivity = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, help_text='uS/cm')
+    effluent_nitrates = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True, help_text='Nitrates mg/L')
+    effluent_phosphates = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True, help_text='Phosphates mg/L')
     effluent_tn = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True, help_text='Total Nitrogen mg/L — M')
     effluent_tp = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True, help_text='Total Phosphorus mg/L — M')
-    effluent_fc = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True, help_text='Fecal Coliforms CFU/100mL — W')
+    effluent_fc = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True, help_text='Fecal Coliforms MPN/100mL — W')
+    effluent_ecoli = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True, help_text='E.coli CFU/100mL')
+    effluent_total_coliforms = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True, help_text='Total Coliforms MPN/100mL')
     effluent_turbidity = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True, help_text='NTU — D')
     effluent_chlorine = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True, help_text='mg/L — D')
     effluent_do = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True, help_text='Dissolved Oxygen mg/L — D')
@@ -975,12 +1024,21 @@ class DailyLabRecord(models.Model):
     # Notes
     remarks = models.TextField(blank=True)
 
+    bod_removal_efficiency = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True)
+    tss_removal_efficiency = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True)
+
     # Verification
     status = models.CharField(
         max_length=20,
-        choices=[('submitted', 'Submitted'), ('verified', 'Verified')],
-        default='submitted'
+        choices=[
+            ('draft', 'Draft'),
+            ('pending_operator', 'Pending Operator Co-sign'),
+            ('returned', 'Returned for Correction'),
+            ('fully_signed', 'Fully Signed')
+        ],
+        default='draft'
     )
+    correction_note = models.TextField(blank=True)
     verified_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -989,6 +1047,8 @@ class DailyLabRecord(models.Model):
         related_name='verified_lab_records'
     )
     verified_at = models.DateTimeField(null=True, blank=True)
+    retest_requested = models.BooleanField(default=False)
+    retest_note = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -999,17 +1059,63 @@ class DailyLabRecord(models.Model):
             models.Index(fields=['status']),
         ]
 
-    @property
-    def bod_removal_efficiency(self):
-        if self.inflow_bod and self.effluent_bod and self.inflow_bod > 0:
-            return round(float((self.inflow_bod - self.effluent_bod) / self.inflow_bod * 100), 1)
-        return None
+    def _calculate_efficiency(self, influent, effluent):
+        if influent is None or effluent is None:
+            return None
+        if float(influent) <= 0:
+            return None
+        return round(float((influent - effluent) / influent * 100), 2)
+
+    def _apply_efficiency_calculations(self):
+        self.bod_removal_efficiency = self._calculate_efficiency(self.inflow_bod, self.effluent_bod)
+        self.tss_removal_efficiency = self._calculate_efficiency(self.inflow_tss, self.effluent_tss)
 
     @property
-    def tss_removal_efficiency(self):
-        if self.inflow_tss and self.effluent_tss and self.inflow_tss > 0:
-            return round(float((self.inflow_tss - self.effluent_tss) / self.inflow_tss * 100), 1)
-        return None
+    def bod_efficiency_band(self):
+        if self.bod_removal_efficiency is None:
+            return None
+        from django.conf import settings as _s
+        val = float(self.bod_removal_efficiency)
+        if val < _s.BOD_REMOVAL_RED_THRESHOLD:
+            return 'red'
+        if val < _s.BOD_REMOVAL_AMBER_THRESHOLD:
+            return 'amber'
+        return 'green'
+
+    @property
+    def tss_efficiency_band(self):
+        if self.tss_removal_efficiency is None:
+            return None
+        from django.conf import settings as _s
+        val = float(self.tss_removal_efficiency)
+        if val < _s.TSS_REMOVAL_RED_THRESHOLD:
+            return 'red'
+        if val < _s.TSS_REMOVAL_AMBER_THRESHOLD:
+            return 'amber'
+        return 'green'
+
+    def effluent_limit_breaches(self):
+        from django.conf import settings as _s
+        breaches = []
+        if self.effluent_bod is not None and float(self.effluent_bod) > _s.NEMA_BOD_DISCHARGE_LIMIT_MG_L:
+            breaches.append(('effluent_bod', float(self.effluent_bod), _s.NEMA_BOD_DISCHARGE_LIMIT_MG_L, 'max'))
+        if self.effluent_tss is not None and float(self.effluent_tss) > _s.NEMA_TSS_DISCHARGE_LIMIT_MG_L:
+            breaches.append(('effluent_tss', float(self.effluent_tss), _s.NEMA_TSS_DISCHARGE_LIMIT_MG_L, 'max'))
+        if self.effluent_turbidity is not None and float(self.effluent_turbidity) > _s.NEMA_TURBIDITY_LIMIT_NTU:
+            breaches.append(('effluent_turbidity', float(self.effluent_turbidity), _s.NEMA_TURBIDITY_LIMIT_NTU, 'max'))
+        if self.effluent_ph is not None and float(self.effluent_ph) < _s.EFFLUENT_PH_MIN:
+            breaches.append(('effluent_ph', float(self.effluent_ph), _s.EFFLUENT_PH_MIN, 'min'))
+        if self.effluent_ph is not None and float(self.effluent_ph) > _s.EFFLUENT_PH_MAX:
+            breaches.append(('effluent_ph', float(self.effluent_ph), _s.EFFLUENT_PH_MAX, 'max'))
+        if self.effluent_do is not None and float(self.effluent_do) < _s.EFFLUENT_DO_MIN_MG_L:
+            breaches.append(('effluent_do', float(self.effluent_do), _s.EFFLUENT_DO_MIN_MG_L, 'min'))
+        if self.effluent_fc is not None and float(self.effluent_fc) > _s.EFFLUENT_FECAL_COLIFORMS_LIMIT_MPN_100ML:
+            breaches.append(('effluent_fc', float(self.effluent_fc), _s.EFFLUENT_FECAL_COLIFORMS_LIMIT_MPN_100ML, 'max'))
+        if self.effluent_ecoli is not None and float(self.effluent_ecoli) > _s.EFFLUENT_ECOLI_LIMIT_CFU_100ML:
+            breaches.append(('effluent_ecoli', float(self.effluent_ecoli), _s.EFFLUENT_ECOLI_LIMIT_CFU_100ML, 'max'))
+        if self.effluent_total_coliforms is not None and float(self.effluent_total_coliforms) > _s.EFFLUENT_TOTAL_COLIFORMS_LIMIT_MPN_100ML:
+            breaches.append(('effluent_total_coliforms', float(self.effluent_total_coliforms), _s.EFFLUENT_TOTAL_COLIFORMS_LIMIT_MPN_100ML, 'max'))
+        return breaches
 
     @property
     def is_bod_exceedance(self):
@@ -1024,6 +1130,10 @@ class DailyLabRecord(models.Model):
             from django.conf import settings as _s
             return float(self.effluent_tss) > _s.NEMA_TSS_DISCHARGE_LIMIT_MG_L
         return None
+
+    def save(self, *args, **kwargs):
+        self._apply_efficiency_calculations()
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"Lab Record {self.record_date}"
@@ -1047,6 +1157,10 @@ class MonthlySummarySnapshot(models.Model):
     )
     locked_at = models.DateTimeField(null=True, blank=True)
     snapshot_data = models.JSONField(null=True, blank=True)
+    supervisor_draft_notes = models.TextField(
+        blank=True,
+        help_text='Plant-level notes compiled by STP Supervisor before superintendent lock.',
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -1062,9 +1176,16 @@ class MonthlySummarySnapshot(models.Model):
 
 class TreatmentPond(models.Model):
     """Lookup table for anaerobic ponds at the STP site."""
+    FREQUENCY_CHOICES = [
+        ('daily', 'Daily'),
+        ('twice_weekly', 'Twice Weekly (Mon/Wed/Fri)'),
+        ('weekly', 'Weekly (Friday)'),
+        ('monthly', 'Monthly'),
+    ]
     code = models.CharField(max_length=20, unique=True)
     name = models.CharField(max_length=100)
     capacity_m3 = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    frequency = models.CharField(max_length=20, choices=FREQUENCY_CHOICES, default='daily')
     is_active = models.BooleanField(default=True)
 
     class Meta:
@@ -1080,9 +1201,10 @@ class PondDailyLog(models.Model):
       submitted → cosigned_op → verified
     """
     POND_LOG_STATUS = [
-        ('submitted', 'Submitted'),
-        ('cosigned_op', 'Co-signed by Operator'),
-        ('verified', 'Verified by Supervisor'),
+        ('draft', 'Draft'),
+        ('pending_second_sign', 'Pending Second Sign'),
+        ('pending_supervisor', 'Pending Supervisor Sign'),
+        ('fully_signed', 'Fully Signed'),
     ]
 
     pond = models.ForeignKey(TreatmentPond, on_delete=models.PROTECT, related_name='daily_logs')
@@ -1101,8 +1223,26 @@ class PondDailyLog(models.Model):
     colour = models.CharField(max_length=50, blank=True)
     remarks = models.TextField(blank=True)
 
+    YN_CHOICES = [('Y', 'Yes'), ('N', 'No')]
+    daily_inspection_done = models.BooleanField(default=False, help_text='Inspect ponds and record abnormalities')
+    valves_hand_stops_ok = models.BooleanField(null=True, blank=True)
+    inspection_incidences = models.PositiveSmallIntegerField(null=True, blank=True)
+    spillage_incidences = models.PositiveSmallIntegerField(null=True, blank=True)
+    new_mother_connections = models.PositiveSmallIntegerField(null=True, blank=True)
+    new_child_connections = models.PositiveSmallIntegerField(null=True, blank=True)
+    repairs_completed = models.PositiveSmallIntegerField(null=True, blank=True)
+    bod_incidences = models.PositiveSmallIntegerField(null=True, blank=True)
+    exhauster_volume_m3 = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True)
+    effluent_volume_m3 = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True)
+    yearly_desludging = models.CharField(max_length=1, choices=YN_CHOICES, blank=True)
+    yearly_rust_removal = models.CharField(max_length=1, choices=YN_CHOICES, blank=True)
+    yearly_painting = models.CharField(max_length=1, choices=YN_CHOICES, blank=True)
+    yearly_grease_paint_valves = models.CharField(max_length=1, choices=YN_CHOICES, blank=True)
+    intermittent_grass_cutting = models.CharField(max_length=1, choices=YN_CHOICES, blank=True)
+    intermittent_floating_material = models.CharField(max_length=1, choices=YN_CHOICES, blank=True)
+
     # Sign-off chain
-    status = models.CharField(max_length=20, choices=POND_LOG_STATUS, default='submitted')
+    status = models.CharField(max_length=20, choices=POND_LOG_STATUS, default='draft')
 
     cosigned_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
@@ -1280,3 +1420,63 @@ class Notification(models.Model):
             self.is_read = True
             self.read_at = timezone.now()
             self.save(update_fields=['is_read', 'read_at'])
+
+
+class LabComplianceFlag(models.Model):
+    SEVERITY_CHOICES = [
+        ('amber', 'Amber'),
+        ('red', 'Red'),
+    ]
+    STATUS_CHOICES = [
+        ('open', 'Open'),
+        ('resolved', 'Resolved'),
+        ('acknowledged', 'Acknowledged'),
+        ('escalated', 'Escalated to Superintendent'),
+    ]
+
+    lab_record = models.ForeignKey(DailyLabRecord, on_delete=models.CASCADE, related_name='compliance_flags')
+    parameter_key = models.CharField(max_length=80)
+    measured_value = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    threshold_value = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    threshold_mode = models.CharField(max_length=8, choices=[('min', 'Min'), ('max', 'Max')], default='max')
+    severity = models.CharField(max_length=10, choices=SEVERITY_CHOICES)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='open')
+    notes = models.TextField(blank=True)
+
+    corrective_action = models.TextField(blank=True)
+    corrective_action_at = models.DateTimeField(null=True, blank=True)
+    corrected_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='resolved_lab_flags'
+    )
+    acknowledged_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='acknowledged_lab_flags'
+    )
+    acknowledged_at = models.DateTimeField(null=True, blank=True)
+    escalated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='escalated_lab_flags'
+    )
+    escalated_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['severity', 'status']),
+            models.Index(fields=['parameter_key']),
+        ]
+
+    def __str__(self):
+        return f"Flag {self.parameter_key} ({self.severity}) on {self.lab_record.record_date}"

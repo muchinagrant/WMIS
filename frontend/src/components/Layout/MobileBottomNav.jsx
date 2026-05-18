@@ -17,7 +17,7 @@ const MobileBottomNav = () => {
         inspection: ['line_supervisor', 'line_attendant'],
         dispatch: ['line_supervisor', 'line_attendant'],
         summary: ['admin', 'stp_superintendent', 'stp_supervisor'],
-        treatment: ['stp_supervisor', 'stp_operator', 'stp_attendant'],
+        treatment: ['stp_supervisor', 'stp_operator', 'lab_tech'],
     };
 
     const hasAccess = (tab) => permissions[tab]?.includes(userRole) || false;

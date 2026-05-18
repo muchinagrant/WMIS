@@ -7,7 +7,7 @@ from .models import (
     SewerLineSection, PatrolRow, WeeklyLinePatrol, InletWorksDailyTask,
     DailyFlowRecord, FlowReading, DailyLabRecord,
     TreatmentPond, PondDailyLog, PondYearlyTask,
-    Zone, SewerLine, Notification,
+    Zone, SewerLine, Notification, LabComplianceFlag,
 )
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
@@ -151,6 +151,7 @@ class TreatmentParameterSerializer(serializers.ModelSerializer):
 class TreatmentLogSerializer(serializers.ModelSerializer):
     parameters = TreatmentParameterSerializer(many=True)
     operator_name = serializers.ReadOnlyField(source='operator.get_full_name')
+    reviewed_by_name = serializers.ReadOnlyField(source='reviewed_by.get_full_name')
     parameter_count = serializers.IntegerField(source='parameters.count', read_only=True)
 
     class Meta:
@@ -158,9 +159,14 @@ class TreatmentLogSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'report_date', 'operator', 'operator_name', 'shift',
             'operational_notes', 'alert', 'parameters', 'parameter_count',
-            'created_at', 'updated_at'
+            'review_status', 'supervisor_comment', 'correction_note',
+            'reviewed_by', 'reviewed_by_name', 'reviewed_at',
+            'created_at', 'updated_at',
         ]
-        read_only_fields = ['alert', 'created_at', 'updated_at']  # Computed server-side
+        read_only_fields = [
+            'alert', 'reviewed_by', 'reviewed_by_name', 'reviewed_at',
+            'created_at', 'updated_at',
+        ]
 
     def create(self, validated_data):
         parameters_data = validated_data.pop('parameters', [])
@@ -381,6 +387,8 @@ class SludgeCollectionSerializer(serializers.ModelSerializer):
     """
     exhauster_reg_no = serializers.ReadOnlyField(source='exhauster.reg_no')
     received_by_name = serializers.ReadOnlyField(source='received_by.get_full_name')
+    entered_by_name = serializers.ReadOnlyField(source='entered_by.get_full_name')
+    rejected_by_name = serializers.ReadOnlyField(source='rejected_by.get_full_name')
 
     class Meta:
         model = SludgeCollection
@@ -388,7 +396,9 @@ class SludgeCollectionSerializer(serializers.ModelSerializer):
         read_only_fields = [
             'created_at', 'updated_at',
             'received_by', 'received_at',
+            'entered_by',
             'rejection_reason', 'manifest_status',
+            'rejected_by', 'rejected_at',
         ]
 
     def validate_volume_m3(self, value):
@@ -644,6 +654,25 @@ class InletWorksDailyTaskSerializer(serializers.ModelSerializer):
             validated_data.setdefault('submitted_by', request.user)
         return super().create(validated_data)
 
+    def validate(self, attrs):
+        task_reason_map = {
+            'raking_t1': 'raking_t1_reason',
+            'raking_t2': 'raking_t2_reason',
+            'raking_t3': 'raking_t3_reason',
+            'screenings_burial': 'screenings_burial_reason',
+            'grit_scooping': 'grit_scooping_reason',
+            'grit_burial': 'grit_burial_reason',
+        }
+        errors = {}
+        for task_field, reason_field in task_reason_map.items():
+            task_value = attrs.get(task_field, getattr(self.instance, task_field, None) if self.instance else None)
+            reason_value = attrs.get(reason_field, getattr(self.instance, reason_field, '') if self.instance else '')
+            if task_value is False and not str(reason_value or '').strip():
+                errors[reason_field] = 'This reason is required when the task is marked not performed.'
+        if errors:
+            raise serializers.ValidationError(errors)
+        return attrs
+
 
 # --- F203C: INLET WORKS FLOW MEASUREMENT ---
 
@@ -655,14 +684,16 @@ class FlowReadingSerializer(serializers.ModelSerializer):
 class DailyFlowRecordSerializer(serializers.ModelSerializer):
     readings = FlowReadingSerializer(many=True)
     average_daily_flow = serializers.ReadOnlyField()
+    operator_note = serializers.CharField(required=False, allow_blank=True)
+    supervisor_note = serializers.CharField(required=False, allow_blank=True)
 
     class Meta:
         model = DailyFlowRecord
         fields = [
             'id', 'date', 'remarks', 'readings', 'average_daily_flow',
-            'status', 'submitted_at', 'verified_by', 'verified_at'
+            'submitted_at', 'operator_note', 'supervisor_note'
         ]
-        read_only_fields = ['average_daily_flow', 'submitted_at', 'verified_by', 'verified_at']
+        read_only_fields = ['average_daily_flow', 'submitted_at']
 
     def create(self, validated_data):
         readings_data = validated_data.pop('readings', [])
@@ -701,11 +732,14 @@ class DailyFlowRecordSerializer(serializers.ModelSerializer):
 # --- F203B: DAILY LAB RECORDS ---
 
 LAB_PARAM_FIELDS = [
-    'inflow_ph', 'inflow_temperature', 'inflow_tss', 'inflow_bod',
-    'inflow_cod', 'inflow_tn', 'inflow_tp', 'inflow_fc',
-    'effluent_ph', 'effluent_temperature', 'effluent_tss', 'effluent_bod',
-    'effluent_cod', 'effluent_tn', 'effluent_tp', 'effluent_fc',
-    'effluent_turbidity', 'effluent_chlorine', 'effluent_do',
+    'inflow_volume_m3', 'inflow_ph', 'inflow_bod', 'inflow_cod', 'inflow_tss',
+    'inflow_temperature', 'inflow_do', 'inflow_turbidity', 'inflow_conductivity',
+    'inflow_nitrates', 'inflow_phosphates', 'inflow_tn', 'inflow_tp', 'inflow_fc',
+    'effluent_volume_m3', 'effluent_ph', 'effluent_bod', 'effluent_cod', 'effluent_tss',
+    'effluent_temperature', 'effluent_do', 'effluent_turbidity', 'effluent_conductivity',
+    'effluent_nitrates', 'effluent_phosphates', 'effluent_tn', 'effluent_tp', 'effluent_fc',
+    'effluent_ecoli', 'effluent_total_coliforms',
+    'effluent_chlorine',
     'volume_treated_m3', 'sludge_volume_m3',
 ]
 
@@ -715,6 +749,8 @@ class DailyLabRecordSerializer(serializers.ModelSerializer):
     verified_by_name = serializers.ReadOnlyField(source='verified_by.get_full_name')
     bod_removal_efficiency = serializers.ReadOnlyField()
     tss_removal_efficiency = serializers.ReadOnlyField()
+    bod_efficiency_band = serializers.ReadOnlyField()
+    tss_efficiency_band = serializers.ReadOnlyField()
     is_bod_exceedance = serializers.ReadOnlyField()
     is_tss_exceedance = serializers.ReadOnlyField()
 
@@ -723,12 +759,15 @@ class DailyLabRecordSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'record_date', 'attendant', 'attendant_name', 'remarks',
             'status', 'verified_by', 'verified_by_name', 'verified_at',
+            'retest_requested', 'retest_note',
             'bod_removal_efficiency', 'tss_removal_efficiency',
+            'bod_efficiency_band', 'tss_efficiency_band',
             'is_bod_exceedance', 'is_tss_exceedance',
             'created_at', 'updated_at',
         ] + LAB_PARAM_FIELDS
         read_only_fields = [
             'status', 'verified_by', 'verified_by_name', 'verified_at',
+            'retest_requested',
             'bod_removal_efficiency', 'tss_removal_efficiency',
             'is_bod_exceedance', 'is_tss_exceedance',
             'created_at', 'updated_at',
@@ -736,7 +775,7 @@ class DailyLabRecordSerializer(serializers.ModelSerializer):
 
     def update(self, instance, validated_data):
         for field in LAB_PARAM_FIELDS:
-            if field in validated_data and validated_data[field] is not None:
+            if field in validated_data:
                 setattr(instance, field, validated_data[field])
         for attr in ('attendant', 'remarks', 'record_date'):
             if attr in validated_data:
@@ -745,12 +784,37 @@ class DailyLabRecordSerializer(serializers.ModelSerializer):
         return instance
 
 
+class LabComplianceFlagSerializer(serializers.ModelSerializer):
+    lab_record_date = serializers.ReadOnlyField(source='lab_record.record_date')
+    corrected_by_name = serializers.ReadOnlyField(source='corrected_by.get_full_name')
+    acknowledged_by_name = serializers.ReadOnlyField(source='acknowledged_by.get_full_name')
+    escalated_by_name = serializers.ReadOnlyField(source='escalated_by.get_full_name')
+
+    class Meta:
+        model = LabComplianceFlag
+        fields = [
+            'id', 'lab_record', 'lab_record_date',
+            'parameter_key', 'measured_value', 'threshold_value', 'threshold_mode',
+            'severity', 'status', 'notes',
+            'corrective_action', 'corrective_action_at', 'corrected_by', 'corrected_by_name',
+            'acknowledged_by', 'acknowledged_by_name', 'acknowledged_at',
+            'escalated_by', 'escalated_by_name', 'escalated_at',
+            'created_at', 'updated_at',
+        ]
+        read_only_fields = [
+            'corrected_by', 'corrected_by_name', 'corrective_action_at',
+            'acknowledged_by', 'acknowledged_by_name', 'acknowledged_at',
+            'escalated_by', 'escalated_by_name', 'escalated_at',
+            'created_at', 'updated_at',
+        ]
+
+
 # --- ANAEROBIC POND OPERATIONS ---
 
 class TreatmentPondSerializer(serializers.ModelSerializer):
     class Meta:
         model = TreatmentPond
-        fields = ['id', 'code', 'name', 'capacity_m3', 'is_active']
+        fields = ['id', 'code', 'name', 'capacity_m3', 'frequency', 'is_active']
 
 
 class PondDailyLogSerializer(serializers.ModelSerializer):
@@ -758,15 +822,22 @@ class PondDailyLogSerializer(serializers.ModelSerializer):
     cosigned_by_name = serializers.ReadOnlyField(source='cosigned_by.get_full_name')
     verified_by_name = serializers.ReadOnlyField(source='verified_by.get_full_name')
     pond_code = serializers.ReadOnlyField(source='pond.code')
+    pond_frequency = serializers.ReadOnlyField(source='pond.frequency')
     incident_number = serializers.ReadOnlyField(source='incident_created.incident_number')
 
     class Meta:
         model = PondDailyLog
         fields = [
-            'id', 'pond', 'pond_code', 'log_date',
+            'id', 'pond', 'pond_code', 'pond_frequency', 'log_date',
             'submitted_by', 'submitted_by_name',
             'ph', 'temperature', 'do_level',
             'surface_scum', 'odour_complaint', 'colour', 'remarks',
+            'daily_inspection_done',
+            'valves_hand_stops_ok', 'inspection_incidences', 'spillage_incidences',
+            'new_mother_connections', 'new_child_connections', 'repairs_completed',
+            'bod_incidences', 'exhauster_volume_m3', 'effluent_volume_m3',
+            'yearly_desludging', 'yearly_rust_removal', 'yearly_painting',
+            'yearly_grease_paint_valves', 'intermittent_grass_cutting', 'intermittent_floating_material',
             'status',
             'cosigned_by', 'cosigned_by_name', 'cosigned_at',
             'verified_by', 'verified_by_name', 'verified_at',

@@ -4,6 +4,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.decorators import action
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.response import Response
+from rest_framework.exceptions import PermissionDenied
 from rest_framework_simplejwt.views import TokenObtainPairView
 from django.contrib.auth import get_user_model
 from django.utils import timezone
@@ -19,10 +20,13 @@ from core.models import (
     SewerLineSection, PatrolRow, WeeklyLinePatrol,
     InletWorksDailyTask, DailyFlowRecord, TreatmentParameter, DailyLabRecord,
     MonthlySummarySnapshot, TreatmentPond, PondDailyLog, PondYearlyTask,
-    Zone, SewerLine, Notification,
+    Zone, SewerLine, Notification, LabComplianceFlag,
 )
-from core.permissions import IsLineSupervisorOrAbove, IsSTPOperatorOrAbove, IsSTPSupervisorOrAbove
-from core.api.mixins import LockEnforcementMixin, ExecutiveReadOnlyMixin
+from core.permissions import (
+    IsLineSupervisorOrAbove, IsSTPOperatorOrAbove, IsSTPSupervisorOrAbove,
+    IsSTPOperator, IsSTPOperatorOrLabTech,
+)
+from core.api.mixins import LockEnforcementMixin, ExecutiveReadOnlyMixin, MonthLockEnforcementMixin
 from .serializers import (
     IncidentSerializer, RepairSerializer, InspectionSerializer,
     TreatmentLogSerializer, ExhausterSerializer, ExhausterLicenseSerializer,
@@ -32,8 +36,24 @@ from .serializers import (
     InletWorksDailyTaskSerializer, DailyFlowRecordSerializer,
     DailyLabRecordSerializer, AttachmentSerializer, UserSerializer,
     TreatmentPondSerializer, PondDailyLogSerializer, PondYearlyTaskSerializer,
-    ZoneSerializer, SewerLineSerializer, NotificationSerializer,
+    ZoneSerializer, SewerLineSerializer, NotificationSerializer, LabComplianceFlagSerializer,
 )
+
+
+def _notify_roles(roles, title, message, notification_type='approval', link_url=''):
+    recipients = User.objects.filter(role__in=roles)
+    notifications = [
+        Notification(
+            recipient=user,
+            title=title,
+            message=message,
+            notification_type=notification_type,
+            link_url=link_url,
+        )
+        for user in recipients
+    ]
+    if notifications:
+        Notification.objects.bulk_create(notifications)
 
 # --- CUSTOM AUTHENTICATION VIEW ---
 class CustomTokenObtainPairView(TokenObtainPairView):
@@ -289,10 +309,69 @@ class InspectionViewSet(ExecutiveReadOnlyMixin, viewsets.ModelViewSet):
     serializer_class = InspectionSerializer
     permission_classes = [IsAuthenticated]
 
-class TreatmentLogViewSet(ExecutiveReadOnlyMixin, viewsets.ModelViewSet):
+class TreatmentLogViewSet(MonthLockEnforcementMixin, ExecutiveReadOnlyMixin, viewsets.ModelViewSet):
     queryset = TreatmentLog.objects.all().order_by('-report_date')
     serializer_class = TreatmentLogSerializer
     permission_classes = [IsAuthenticated]
+
+    def perform_create(self, serializer):
+        serializer.save(operator=self.request.user, review_status='pending_review')
+
+    def create(self, request, *args, **kwargs):
+        if getattr(request.user, 'role', '') != 'stp_operator':
+            return Response({'error': 'Only STP Operator can submit treatment logs.'}, status=status.HTTP_403_FORBIDDEN)
+        return super().create(request, *args, **kwargs)
+
+    def update(self, request, *args, **kwargs):
+        if getattr(request.user, 'role', '') != 'stp_operator':
+            return Response({'error': 'Only STP Operator can edit treatment logs.'}, status=status.HTTP_403_FORBIDDEN)
+        return super().update(request, *args, **kwargs)
+
+    def partial_update(self, request, *args, **kwargs):
+        if getattr(request.user, 'role', '') != 'stp_operator':
+            return Response({'error': 'Only STP Operator can edit treatment logs.'}, status=status.HTTP_403_FORBIDDEN)
+        return super().partial_update(request, *args, **kwargs)
+
+    @action(detail=True, methods=['patch'], permission_classes=[IsAuthenticated, IsSTPSupervisorOrAbove])
+    def request_correction(self, request, pk=None):
+        log = self.get_object()
+        note = (request.data.get('correction_note') or '').strip()
+        if not note:
+            return Response({'error': 'correction_note is required.'}, status=status.HTTP_400_BAD_REQUEST)
+        log.review_status = 'correction_requested'
+        log.correction_note = note
+        log.reviewed_by = request.user
+        log.reviewed_at = timezone.now()
+        log.save(update_fields=['review_status', 'correction_note', 'reviewed_by', 'reviewed_at'])
+        _notify_roles(
+            ['stp_operator'],
+            'Treatment Log Correction Requested',
+            f'Supervisor requested correction for treatment log {log.report_date}: {note}',
+            notification_type='approval',
+            link_url='/treatment',
+        )
+        return Response(self.get_serializer(log).data)
+
+    @action(detail=True, methods=['patch'], permission_classes=[IsAuthenticated, IsSTPSupervisorOrAbove])
+    def approve_review(self, request, pk=None):
+        log = self.get_object()
+        comment = (request.data.get('supervisor_comment') or '').strip()
+        log.review_status = 'supervisor_approved'
+        log.supervisor_comment = comment
+        log.reviewed_by = request.user
+        log.reviewed_at = timezone.now()
+        log.save(update_fields=['review_status', 'supervisor_comment', 'reviewed_by', 'reviewed_at'])
+        return Response(self.get_serializer(log).data)
+
+    @action(detail=True, methods=['patch'], permission_classes=[IsAuthenticated, IsSTPSupervisorOrAbove])
+    def add_comment(self, request, pk=None):
+        log = self.get_object()
+        comment = (request.data.get('supervisor_comment') or '').strip()
+        if not comment:
+            return Response({'error': 'supervisor_comment is required.'}, status=status.HTTP_400_BAD_REQUEST)
+        log.supervisor_comment = comment
+        log.save(update_fields=['supervisor_comment'])
+        return Response(self.get_serializer(log).data)
 
 class ExhausterViewSet(ExecutiveReadOnlyMixin, viewsets.ModelViewSet):
     queryset = Exhauster.objects.all().order_by('reg_no')
@@ -308,10 +387,21 @@ class ExhausterLicenseViewSet(ExecutiveReadOnlyMixin, viewsets.ModelViewSet):
 LicenseViewSet = ExhausterLicenseViewSet
 
 
-class SludgeCollectionViewSet(ExecutiveReadOnlyMixin, viewsets.ModelViewSet):
+class SludgeCollectionViewSet(MonthLockEnforcementMixin, ExecutiveReadOnlyMixin, viewsets.ModelViewSet):
     queryset = SludgeCollection.objects.all().order_by('-collection_date')
     serializer_class = SludgeCollectionSerializer
     permission_classes = [IsAuthenticated]
+
+    def perform_create(self, serializer):
+        manifest = serializer.save(entered_by=self.request.user)
+        if manifest.manifest_status == 'pending':
+            _notify_roles(
+                ['stp_operator'],
+                'Sludge Manifest Awaiting Approval',
+                f'New sludge delivery from {manifest.source_name or "unknown source"} awaits operator approval.',
+                notification_type='approval',
+                link_url='/sludge',
+            )
 
     @action(detail=True, methods=['patch'], permission_classes=[IsAuthenticated, IsSTPOperatorOrAbove])
     def receive(self, request, pk=None):
@@ -321,14 +411,23 @@ class SludgeCollectionViewSet(ExecutiveReadOnlyMixin, viewsets.ModelViewSet):
                 {'error': 'Only pending manifests can be received.'},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        manifest.manifest_status = 'received'
+        if getattr(request.user, 'role', '') != 'stp_operator':
+            return Response({'error': 'Only STP Operator can approve sludge manifests.'}, status=status.HTTP_403_FORBIDDEN)
+        manifest.manifest_status = 'approved'
         manifest.received_by = request.user
         manifest.received_at = timezone.now()
         manifest.save()
+        _notify_roles(
+            ['stp_supervisor'],
+            'Sludge Manifest Approved',
+            f'Manifest #{manifest.id} approved by operator.',
+            notification_type='approval',
+            link_url='/sludge',
+        )
         serializer = self.get_serializer(manifest)
         return Response(serializer.data)
 
-    @action(detail=True, methods=['patch'], permission_classes=[IsAuthenticated, IsSTPSupervisorOrAbove])
+    @action(detail=True, methods=['patch'], permission_classes=[IsAuthenticated, IsSTPOperator])
     def reject(self, request, pk=None):
         manifest = self.get_object()
         if manifest.manifest_status != 'pending':
@@ -344,7 +443,16 @@ class SludgeCollectionViewSet(ExecutiveReadOnlyMixin, viewsets.ModelViewSet):
             )
         manifest.manifest_status = 'rejected'
         manifest.rejection_reason = rejection_reason
+        manifest.rejected_by = request.user
+        manifest.rejected_at = timezone.now()
         manifest.save()
+        _notify_roles(
+            ['stp_supervisor'],
+            'Sludge Manifest Rejected',
+            f'Manifest #{manifest.id} rejected by operator. Reason: {rejection_reason}',
+            notification_type='approval',
+            link_url='/sludge',
+        )
         serializer = self.get_serializer(manifest)
         return Response(serializer.data)
 
@@ -450,26 +558,83 @@ class WeeklyLinePatrolViewSet(ExecutiveReadOnlyMixin, viewsets.ModelViewSet):
         serializer = self.get_serializer(patrol)
         return Response(serializer.data)
 
-class InletWorksDailyTaskViewSet(LockEnforcementMixin, ExecutiveReadOnlyMixin, viewsets.ModelViewSet):
+class InletWorksDailyTaskViewSet(MonthLockEnforcementMixin, LockEnforcementMixin, ExecutiveReadOnlyMixin, viewsets.ModelViewSet):
     """
     [cite_start]Endpoint for F203A Inlet Works Screens & Grit Removal. [cite: 218]
     """
     queryset = InletWorksDailyTask.objects.all().order_by('-date')
     serializer_class = InletWorksDailyTaskSerializer
     permission_classes = [IsAuthenticated]
+    locked_values = {'fully_signed'}
+    lock_error_message = 'F203A log already fully signed and locked.'
 
-    @action(detail=True, methods=['patch'], permission_classes=[IsAuthenticated, IsSTPSupervisorOrAbove])
-    def verify(self, request, pk=None):
+    def perform_create(self, serializer):
+        submit_for_signoff = str(self.request.data.get('submit_for_signoff', '')).lower() in {'1', 'true', 'yes', 'on'}
+        status_value = 'pending_operator' if submit_for_signoff else 'draft'
+        record = serializer.save(attendant=self.request.user, submitted_by=self.request.user, status=status_value)
+        if status_value == 'pending_operator':
+            _notify_roles(
+                ['stp_operator'],
+                'F203A Pending Co-sign',
+                f'F203A entry for {record.date} is awaiting your signature.',
+                notification_type='approval',
+                link_url='/f203a',
+            )
+
+    def perform_update(self, serializer):
+        submit_for_signoff = str(self.request.data.get('submit_for_signoff', '')).lower() in {'1', 'true', 'yes', 'on'}
+        instance = serializer.instance
+        previous_status = instance.status
+        status_value = 'pending_operator' if submit_for_signoff else ('returned' if previous_status == 'returned' else 'draft')
+        record = serializer.save(status=status_value)
+        if status_value == 'pending_operator' and previous_status != 'pending_operator':
+            _notify_roles(
+                ['stp_operator'],
+                'F203A Pending Co-sign',
+                f'F203A entry for {record.date} is awaiting your signature.',
+                notification_type='approval',
+                link_url='/f203a',
+            )
+
+    @action(detail=True, methods=['patch'], permission_classes=[IsAuthenticated, IsSTPOperator])
+    def sign(self, request, pk=None):
         task = self.get_object()
-
-        if task.status == 'verified':
-            return Response({'error': 'Record already verified and locked.'}, status=status.HTTP_400_BAD_REQUEST)
-
-        task.status = 'verified'
+        if task.status not in ['pending_operator', 'returned']:
+            return Response({'error': f'Cannot sign task with status {task.status}.'}, status=status.HTTP_400_BAD_REQUEST)
+        task.status = 'fully_signed'
         task.verified_by = request.user
         task.verified_at = timezone.now()
+        task.correction_note = ''
         task.save()
+        _notify_roles(
+            ['stp_attendant'],
+            'F203A Fully Signed',
+            f'F203A entry for {task.date} was signed by operator.',
+            notification_type='approval',
+            link_url='/f203a',
+        )
 
+        serializer = self.get_serializer(task)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['patch'], permission_classes=[IsAuthenticated, IsSTPOperator])
+    def request_correction(self, request, pk=None):
+        task = self.get_object()
+        if task.status not in ['pending_operator', 'fully_signed']:
+            return Response({'error': f'Cannot return task with status {task.status}.'}, status=status.HTTP_400_BAD_REQUEST)
+        note = request.data.get('correction_note', '').strip()
+        if not note:
+            return Response({'error': 'correction_note is required.'}, status=status.HTTP_400_BAD_REQUEST)
+        task.status = 'returned'
+        task.correction_note = note
+        task.save(update_fields=['status', 'correction_note'])
+        _notify_roles(
+            ['stp_attendant'],
+            'F203A Correction Requested',
+            f'Operator requested correction for F203A {task.date}: {note}',
+            notification_type='approval',
+            link_url='/f203a',
+        )
         serializer = self.get_serializer(task)
         return Response(serializer.data)
 
@@ -501,14 +666,14 @@ class InletWorksDailyTaskViewSet(LockEnforcementMixin, ExecutiveReadOnlyMixin, v
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
 
-class DailyLabRecordViewSet(LockEnforcementMixin, ExecutiveReadOnlyMixin, viewsets.ModelViewSet):
+class DailyLabRecordViewSet(MonthLockEnforcementMixin, LockEnforcementMixin, ExecutiveReadOnlyMixin, viewsets.ModelViewSet):
     """
     F203B: Daily Lab Record with partial-entry support (PATCH preserves nulls)
     and supervisor verification workflow.
     """
     serializer_class = DailyLabRecordSerializer
     permission_classes = [IsAuthenticated]
-    locked_values = {'verified'}
+    locked_values = {'fully_signed'}
     lock_error_message = 'Lab record already verified and locked.'
 
     def get_queryset(self):
@@ -524,21 +689,98 @@ class DailyLabRecordViewSet(LockEnforcementMixin, ExecutiveReadOnlyMixin, viewse
         return qs.order_by('record_date')
 
     def perform_create(self, serializer):
-        serializer.save(attendant=self.request.user)
+        if getattr(self.request.user, 'role', '') != 'lab_tech':
+            raise PermissionDenied('Only lab_tech can create lab records.')
+        record = serializer.save(attendant=self.request.user)
+        self._sync_flags(record)
+
+    def perform_update(self, serializer):
+        record = serializer.save()
+        self._sync_flags(record)
+
+    def _sync_flags(self, record):
+        record.compliance_flags.filter(status='open').delete()
+        created = []
+
+        if record.bod_removal_efficiency is not None:
+            if float(record.bod_removal_efficiency) < 60:
+                created.append(LabComplianceFlag.objects.create(
+                    lab_record=record,
+                    parameter_key='bod_removal_efficiency',
+                    measured_value=record.bod_removal_efficiency,
+                    threshold_value=60,
+                    threshold_mode='min',
+                    severity='red',
+                ))
+            elif float(record.bod_removal_efficiency) < 80:
+                created.append(LabComplianceFlag.objects.create(
+                    lab_record=record,
+                    parameter_key='bod_removal_efficiency',
+                    measured_value=record.bod_removal_efficiency,
+                    threshold_value=80,
+                    threshold_mode='min',
+                    severity='amber',
+                ))
+
+        for parameter_key, measured_value, threshold_value, threshold_mode in record.effluent_limit_breaches():
+            created.append(LabComplianceFlag.objects.create(
+                lab_record=record,
+                parameter_key=parameter_key,
+                measured_value=measured_value,
+                threshold_value=threshold_value,
+                threshold_mode=threshold_mode,
+                severity='red',
+            ))
+
+        for flag in created:
+            if flag.severity == 'red':
+                _notify_roles(
+                    ['stp_operator', 'stp_supervisor'],
+                    'Red Lab Compliance Flag',
+                    f'{flag.parameter_key} breached on {record.record_date}.',
+                    notification_type='incident_critical',
+                    link_url='/alerts',
+                )
+            else:
+                _notify_roles(
+                    ['stp_operator'],
+                    'Amber Lab Efficiency Flag',
+                    f'{flag.parameter_key} is in amber range on {record.record_date}.',
+                    notification_type='approval',
+                    link_url='/alerts',
+                )
 
     @action(detail=True, methods=['patch'], permission_classes=[IsAuthenticated, IsSTPSupervisorOrAbove])
     def verify(self, request, pk=None):
         record = self.get_object()
-        if record.status == 'verified':
+        if record.status == 'fully_signed':
             return Response({'error': 'Record already verified and locked.'}, status=status.HTTP_400_BAD_REQUEST)
-        record.status = 'verified'
+        record.status = 'fully_signed'
         record.verified_by = request.user
         record.verified_at = timezone.now()
         record.save()
         return Response(self.get_serializer(record).data)
 
+    @action(detail=True, methods=['patch'], permission_classes=[IsAuthenticated, IsSTPSupervisorOrAbove])
+    def request_retest(self, request, pk=None):
+        record = self.get_object()
+        note = (request.data.get('retest_note') or '').strip()
+        if not note:
+            return Response({'error': 'retest_note is required.'}, status=status.HTTP_400_BAD_REQUEST)
+        record.retest_requested = True
+        record.retest_note = note
+        record.save(update_fields=['retest_requested', 'retest_note'])
+        _notify_roles(
+            ['lab_tech'],
+            'Lab Retest Requested',
+            f'Supervisor requested retest for {record.record_date}: {note}',
+            notification_type='approval',
+            link_url='/lab-records',
+        )
+        return Response(self.get_serializer(record).data)
 
-class DailyFlowRecordViewSet(ExecutiveReadOnlyMixin, viewsets.ModelViewSet):
+
+class DailyFlowRecordViewSet(MonthLockEnforcementMixin, ExecutiveReadOnlyMixin, viewsets.ModelViewSet):
     """
     [cite_start]Endpoint for F203C Inlet Works Flow Measurement Task Record. [cite: 190]
     """
@@ -546,20 +788,36 @@ class DailyFlowRecordViewSet(ExecutiveReadOnlyMixin, viewsets.ModelViewSet):
     serializer_class = DailyFlowRecordSerializer
     permission_classes = [IsAuthenticated]
 
-    @action(detail=True, methods=['patch'], permission_classes=[IsAuthenticated, IsSTPSupervisorOrAbove])
-    def verify(self, request, pk=None):
+    def create(self, request, *args, **kwargs):
+        if getattr(request.user, 'role', '') != 'stp_attendant':
+            return Response({'error': 'Only STP Attendant can submit flow records.'}, status=status.HTTP_403_FORBIDDEN)
+        return super().create(request, *args, **kwargs)
+
+    def update(self, request, *args, **kwargs):
+        role = getattr(request.user, 'role', '')
+        if role == 'stp_attendant':
+            return super().update(request, *args, **kwargs)
+        return Response({'error': 'Only STP Attendant can edit flow readings directly.'}, status=status.HTTP_403_FORBIDDEN)
+
+    @action(detail=True, methods=['patch'], permission_classes=[IsAuthenticated, IsSTPOperatorOrAbove])
+    def add_operator_note(self, request, pk=None):
         record = self.get_object()
+        note = request.data.get('operator_note', '').strip()
+        if not note:
+            return Response({'error': 'operator_note is required.'}, status=status.HTTP_400_BAD_REQUEST)
+        record.operator_note = note
+        record.save(update_fields=['operator_note'])
+        return Response(self.get_serializer(record).data)
 
-        if record.status == 'verified':
-            return Response({'error': 'Record already verified and locked.'}, status=status.HTTP_400_BAD_REQUEST)
-
-        record.status = 'verified'
-        record.verified_by = request.user
-        record.verified_at = timezone.now()
-        record.save()
-
-        serializer = self.get_serializer(record)
-        return Response(serializer.data)
+    @action(detail=True, methods=['patch'], permission_classes=[IsAuthenticated, IsSTPSupervisorOrAbove])
+    def add_supervisor_note(self, request, pk=None):
+        record = self.get_object()
+        note = request.data.get('supervisor_note', '').strip()
+        if not note:
+            return Response({'error': 'supervisor_note is required.'}, status=status.HTTP_400_BAD_REQUEST)
+        record.supervisor_note = note
+        record.save(update_fields=['supervisor_note'])
+        return Response(self.get_serializer(record).data)
 
 
 # --- USER VIEWSET ---
@@ -626,14 +884,14 @@ class TreatmentPondViewSet(viewsets.ReadOnlyModelViewSet):
     permission_classes = [IsAuthenticated]
 
 
-class PondDailyLogViewSet(LockEnforcementMixin, ExecutiveReadOnlyMixin, viewsets.ModelViewSet):
+class PondDailyLogViewSet(MonthLockEnforcementMixin, LockEnforcementMixin, ExecutiveReadOnlyMixin, viewsets.ModelViewSet):
     """
     Daily pond observation log with 3-level sign-off:
       submitted → cosigned_op → verified
     """
     serializer_class = PondDailyLogSerializer
     permission_classes = [IsAuthenticated]
-    locked_values = {'verified'}
+    locked_values = {'fully_signed'}
     lock_error_message = 'Pond log already verified and locked.'
 
     def get_queryset(self):
@@ -649,33 +907,52 @@ class PondDailyLogViewSet(LockEnforcementMixin, ExecutiveReadOnlyMixin, viewsets
         return qs.order_by('log_date', 'pond__code')
 
     def perform_create(self, serializer):
-        serializer.save(submitted_by=self.request.user)
+        log = serializer.save(submitted_by=self.request.user, status='pending_second_sign')
+        _notify_roles(
+            ['stp_operator', 'lab_tech'],
+            'Pond Entry Pending Second Sign',
+            f'Pond entry {log.pond.code} for {log.log_date} awaits STW-OP/LT signature.',
+            notification_type='approval',
+            link_url='/ponds',
+        )
 
-    @action(detail=True, methods=['patch'], permission_classes=[IsAuthenticated, IsSTPOperatorOrAbove])
+    @action(detail=True, methods=['patch'], permission_classes=[IsAuthenticated, IsSTPOperatorOrLabTech])
     def cosign(self, request, pk=None):
         log = self.get_object()
-        if log.status != 'submitted':
+        if log.status != 'pending_second_sign':
             return Response(
                 {'error': f'Cannot cosign a log with status "{log.status}".'},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        log.status = 'cosigned_op'
+        log.status = 'pending_supervisor'
         log.cosigned_by = request.user
         log.cosigned_at = timezone.now()
         log.save()
+        Notification.objects.filter(
+            title='Pond Entry Pending Second Sign',
+            message__contains=str(log.log_date),
+            is_read=False,
+        ).exclude(recipient__role='stp_supervisor').update(is_read=True, read_at=timezone.now())
+        _notify_roles(
+            ['stp_supervisor'],
+            'Pond Entry Pending Supervisor Sign',
+            f'Pond entry {log.pond.code} for {log.log_date} is awaiting STW-SP signature.',
+            notification_type='approval',
+            link_url='/ponds',
+        )
         return Response(self.get_serializer(log).data)
 
     @action(detail=True, methods=['patch'], permission_classes=[IsAuthenticated, IsSTPSupervisorOrAbove])
     def verify(self, request, pk=None):
         log = self.get_object()
-        if log.status == 'verified':
+        if log.status == 'fully_signed':
             return Response({'error': 'Log already verified.'}, status=status.HTTP_400_BAD_REQUEST)
-        if log.status != 'cosigned_op':
+        if log.status != 'pending_supervisor':
             return Response(
                 {'error': 'Log must be co-signed by an operator before supervisor verification.'},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        log.status = 'verified'
+        log.status = 'fully_signed'
         log.verified_by = request.user
         log.verified_at = timezone.now()
         log.save()
@@ -707,7 +984,67 @@ class PondDailyLogViewSet(LockEnforcementMixin, ExecutiveReadOnlyMixin, viewsets
         return Response(self.get_serializer(log).data, status=status.HTTP_201_CREATED)
 
 
-class PondYearlyTaskViewSet(ExecutiveReadOnlyMixin, viewsets.ModelViewSet):
+class LabComplianceFlagViewSet(ExecutiveReadOnlyMixin, viewsets.ModelViewSet):
+    serializer_class = LabComplianceFlagSerializer
+    permission_classes = [IsAuthenticated]
+    filterset_fields = ['lab_record', 'status', 'severity']
+
+    def get_queryset(self):
+        qs = LabComplianceFlag.objects.select_related('lab_record', 'corrected_by', 'acknowledged_by', 'escalated_by')
+        status_filter = self.request.query_params.get('status')
+        if status_filter:
+            qs = qs.filter(status=status_filter)
+        return qs.order_by('-created_at')
+
+    @action(detail=True, methods=['patch'], permission_classes=[IsAuthenticated, IsSTPOperator])
+    def resolve(self, request, pk=None):
+        flag = self.get_object()
+        action_text = request.data.get('corrective_action', '').strip()
+        notes = request.data.get('notes', '').strip()
+        if not action_text:
+            return Response({'error': 'corrective_action is required.'}, status=status.HTTP_400_BAD_REQUEST)
+        if notes:
+            action_text = f'{action_text}\n\nNotes: {notes}'
+        flag.corrective_action = action_text
+        flag.corrected_by = request.user
+        flag.corrective_action_at = timezone.now()
+        flag.status = 'resolved'
+        flag.save(update_fields=['corrective_action', 'corrected_by', 'corrective_action_at', 'status'])
+        _notify_roles(
+            ['lab_tech', 'stp_supervisor'],
+            'Lab Flag Resolved',
+            f'Flag {flag.parameter_key} resolved by operator.',
+            notification_type='approval',
+            link_url='/alerts',
+        )
+        return Response(self.get_serializer(flag).data)
+
+    @action(detail=True, methods=['patch'], permission_classes=[IsAuthenticated, IsSTPSupervisorOrAbove])
+    def acknowledge(self, request, pk=None):
+        flag = self.get_object()
+        flag.status = 'acknowledged'
+        flag.acknowledged_by = request.user
+        flag.acknowledged_at = timezone.now()
+        flag.save(update_fields=['status', 'acknowledged_by', 'acknowledged_at'])
+        return Response(self.get_serializer(flag).data)
+
+    @action(detail=True, methods=['patch'], permission_classes=[IsAuthenticated, IsSTPSupervisorOrAbove])
+    def escalate(self, request, pk=None):
+        flag = self.get_object()
+        flag.status = 'escalated'
+        flag.escalated_by = request.user
+        flag.escalated_at = timezone.now()
+        flag.save(update_fields=['status', 'escalated_by', 'escalated_at'])
+        _notify_roles(
+            ['stp_superintendent'],
+            'Supervisor Escalation',
+            f'Lab flag {flag.parameter_key} was escalated to superintendent.',
+            notification_type='incident_critical',
+            link_url='/summary',
+        )
+        return Response(self.get_serializer(flag).data)
+
+class PondYearlyTaskViewSet(MonthLockEnforcementMixin, ExecutiveReadOnlyMixin, viewsets.ModelViewSet):
     serializer_class = PondYearlyTaskSerializer
     permission_classes = [IsAuthenticated]
 
@@ -736,8 +1073,8 @@ class SummaryViewSet(APIView):
 
         patrol_rows = PatrolRow.objects.filter(weekly_patrol__date__year=year, weekly_patrol__date__month=month)
 
-        new_mother = patrol_rows.aggregate(Sum('new_mother_connections'))['new_mother_connections__sum'] or 0
-        new_child = patrol_rows.aggregate(Sum('new_child_connections'))['new_child_connections__sum'] or 0
+        new_main = patrol_rows.aggregate(Sum('new_main_connections'))['new_main_connections__sum'] or 0
+        new_branch = patrol_rows.aggregate(Sum('new_branch_connections'))['new_branch_connections__sum'] or 0
         repairs_completed = Repair.objects.filter(completion_date__year=year, completion_date__month=month).count()
 
         lab_qs = DailyLabRecord.objects.filter(record_date__year=year, record_date__month=month)
@@ -748,6 +1085,15 @@ class SummaryViewSet(APIView):
         tss_vals = [r.tss_removal_efficiency for r in lab_qs if r.tss_removal_efficiency is not None]
         avg_bod = round(sum(bod_vals) / len(bod_vals), 1) if bod_vals else None
         avg_tss = round(sum(tss_vals) / len(tss_vals), 1) if tss_vals else None
+
+        compliance_heat_map = []
+        for day in range(1, calendar.monthrange(year, month)[1] + 1):
+            day_record = lab_qs.filter(record_date__day=day).first()
+            if not day_record:
+                compliance_heat_map.append({'day': day, 'status': 'grey'})
+            else:
+                band = day_record.bod_efficiency_band or 'grey'
+                compliance_heat_map.append({'day': day, 'status': 'yellow' if band == 'amber' else band, 'record_id': day_record.id})
 
         collections = SludgeCollection.objects.filter(collection_date__year=year, collection_date__month=month)
 
@@ -761,7 +1107,7 @@ class SummaryViewSet(APIView):
                 "total_incidents": incidents.count(),
                 "resolved_incidents": incidents.filter(status__in=['resolved', 'closed']).count(),
                 "repairs_completed": repairs_completed,
-                "new_connections": new_mother + new_child,
+                "new_connections": new_main + new_branch,
                 "spillage_incidences": incidents.filter(category='spillage').count(),
             },
             "treatment": {
@@ -780,7 +1126,7 @@ class SummaryViewSet(APIView):
                     "commercial": float(com_vol),
                 },
                 "collections_count": collections.count(),
-                "received_count": collections.filter(manifest_status='received').count(),
+                "received_count": collections.filter(manifest_status='approved').count(),
                 "rejected_count": collections.filter(manifest_status='rejected').count(),
                 "pending_count": collections.filter(manifest_status='pending').count(),
                 "active_exhausters": Exhauster.objects.filter(status='active').count(),
@@ -790,9 +1136,55 @@ class SummaryViewSet(APIView):
                 "month": month,
                 "month_name": month_name,
             },
+            "compliance_heat_map": compliance_heat_map,
         }
 
+    def _compliance_day_detail(self, record_id):
+        """Read-only executive drill-down for a single lab day (heat map red-day click)."""
+        try:
+            record = DailyLabRecord.objects.get(pk=record_id)
+        except DailyLabRecord.DoesNotExist:
+            return Response({'error': 'Lab record not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        flags = record.compliance_flags.all().order_by('-created_at')
+        breaches = [
+            {
+                'parameter_key': key,
+                'measured_value': measured,
+                'threshold_value': threshold,
+                'threshold_mode': mode,
+            }
+            for key, measured, threshold, mode in record.effluent_limit_breaches()
+        ]
+
+        return Response({
+            'record_id': record.id,
+            'record_date': record.record_date.isoformat(),
+            'attendant_name': record.attendant.get_full_name() if record.attendant else None,
+            'bod_removal_efficiency': record.bod_removal_efficiency,
+            'tss_removal_efficiency': record.tss_removal_efficiency,
+            'bod_efficiency_band': record.bod_efficiency_band,
+            'tss_efficiency_band': record.tss_efficiency_band,
+            'inflow_bod': record.inflow_bod,
+            'effluent_bod': record.effluent_bod,
+            'inflow_tss': record.inflow_tss,
+            'effluent_tss': record.effluent_tss,
+            'effluent_ph': record.effluent_ph,
+            'effluent_do': record.effluent_do,
+            'effluent_turbidity': record.effluent_turbidity,
+            'effluent_fc': record.effluent_fc,
+            'effluent_ecoli': record.effluent_ecoli,
+            'effluent_total_coliforms': record.effluent_total_coliforms,
+            'remarks': record.remarks,
+            'effluent_breaches': breaches,
+            'flags': LabComplianceFlagSerializer(flags, many=True).data,
+        })
+
     def get(self, request):
+        record_id = request.query_params.get('record_id')
+        if record_id:
+            return self._compliance_day_detail(int(record_id))
+
         year = request.query_params.get('year')
         month = request.query_params.get('month')
 
@@ -812,6 +1204,7 @@ class SummaryViewSet(APIView):
             data['is_locked'] = True
             data['locked_by'] = snap.locked_by.get_full_name() if snap.locked_by else None
             data['locked_at'] = snap.locked_at.isoformat() if snap.locked_at else None
+            data['supervisor_draft_notes'] = snap.supervisor_draft_notes or ''
             export_format = request.query_params.get('export', 'json').lower()
             if export_format != 'csv':
                 return Response(data)
@@ -820,6 +1213,11 @@ class SummaryViewSet(APIView):
 
         real_data = self._aggregate_month(year, month, request.user)
         real_data['is_locked'] = False
+        try:
+            snap = MonthlySummarySnapshot.objects.get(year=year, month=month)
+            real_data['supervisor_draft_notes'] = snap.supervisor_draft_notes or ''
+        except MonthlySummarySnapshot.DoesNotExist:
+            real_data['supervisor_draft_notes'] = ''
 
         # Extract refs for CSV export
         treatment_data = real_data['treatment']
@@ -870,10 +1268,34 @@ class SummaryViewSet(APIView):
 
         return Response(real_data)
 
+    def patch(self, request):
+        """Supervisor compiles draft plant notes for a month (before superintendent lock)."""
+        if getattr(request.user, 'role', '') != 'stp_supervisor':
+            return Response({'error': 'Only STP Supervisor can save summary draft notes.'}, status=status.HTTP_403_FORBIDDEN)
+
+        year = request.data.get('year') or request.query_params.get('year')
+        month = request.data.get('month') or request.query_params.get('month')
+        notes = request.data.get('supervisor_draft_notes', '')
+
+        if not year or not month:
+            return Response({'error': 'year and month are required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        year, month = int(year), int(month)
+        snap, _ = MonthlySummarySnapshot.objects.get_or_create(year=year, month=month)
+        if snap.is_locked:
+            return Response({'error': 'Month is locked; draft notes cannot be changed.'}, status=status.HTTP_403_FORBIDDEN)
+
+        snap.supervisor_draft_notes = notes
+        snap.save(update_fields=['supervisor_draft_notes', 'updated_at'])
+        return Response({
+            'message': 'Draft notes saved.',
+            'supervisor_draft_notes': snap.supervisor_draft_notes,
+        })
+
     def post(self, request):
         """Lock a month's summary into an immutable snapshot (supervisor workflow)."""
-        if getattr(request.user, 'role', '') != 'stp_supervisor':
-            return Response({'error': 'Only the STP Supervisor can lock a monthly summary.'}, status=status.HTTP_403_FORBIDDEN)
+        if getattr(request.user, 'role', '') != 'stp_superintendent':
+            return Response({'error': 'Only the STP Superintendent can lock a monthly summary.'}, status=status.HTTP_403_FORBIDDEN)
 
         year  = request.data.get('year')  or request.query_params.get('year')
         month = request.data.get('month') or request.query_params.get('month')
@@ -894,6 +1316,14 @@ class SummaryViewSet(APIView):
         snap.locked_at    = timezone.now()
         snap.snapshot_data = snapshot_data
         snap.save()
+
+        _notify_roles(
+            ['stp_supervisor', 'lab_tech', 'stp_operator', 'stp_attendant'],
+            'Month Locked by Superintendent',
+            f'{calendar.month_name[month]} {year} has been locked and is now read-only.',
+            notification_type='system',
+            link_url='/summary',
+        )
 
         return Response({
             'message': f'{calendar.month_name[month]} {year} summary locked successfully.',
@@ -973,3 +1403,34 @@ class NotificationViewSet(viewsets.ModelViewSet):
             'is_read': notification.is_read,
             'read_at': notification.read_at.isoformat() if notification.read_at else None
         }, status=status.HTTP_200_OK)
+
+    @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated])
+    def quick_flag(self, request):
+        form_name = request.data.get('form', 'Other')
+        description = (request.data.get('description') or '').strip()
+        if not description:
+            return Response({'error': 'description is required.'}, status=status.HTTP_400_BAD_REQUEST)
+        author = getattr(request.user, 'full_name', None) or request.user.username
+        _notify_roles(
+            ['stp_supervisor'],
+            f'Abnormality Flagged: {form_name}',
+            f'{author} flagged an abnormality on {form_name}: {description}',
+            notification_type='incident_critical',
+            link_url='/portal/supervisor',
+        )
+        return Response({'message': 'Abnormality flagged successfully.'}, status=status.HTTP_201_CREATED)
+
+    @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated, IsSTPSupervisorOrAbove])
+    def escalate_superintendent(self, request):
+        note = (request.data.get('note') or '').strip()
+        if not note:
+            return Response({'error': 'note is required.'}, status=status.HTTP_400_BAD_REQUEST)
+        author = getattr(request.user, 'full_name', None) or request.user.username
+        _notify_roles(
+            ['stp_superintendent'],
+            'Supervisor Escalation',
+            f'{author} escalated an issue: {note}',
+            notification_type='incident_critical',
+            link_url='/summary',
+        )
+        return Response({'message': 'Escalation sent to superintendent.'}, status=status.HTTP_201_CREATED)

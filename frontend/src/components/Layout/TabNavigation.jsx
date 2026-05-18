@@ -12,14 +12,16 @@ const TabNavigation = ({ orientation = 'horizontal' }) => {
         incidence: ['line_supervisor', 'line_attendant'],
         repairs: ['line_supervisor', 'line_attendant'],
         inspection: ['line_supervisor', 'line_attendant'],
-        treatment: ['stp_supervisor', 'stp_operator', 'stp_attendant'],
+        treatment: ['stp_supervisor', 'stp_operator', 'lab_tech'],
         inlet_works: ['stp_supervisor', 'stp_operator', 'stp_attendant'],
         flow_records: ['stp_supervisor', 'stp_operator', 'stp_attendant'],
         sludge: ['stp_supervisor', 'stp_operator', 'stp_attendant'],
         dispatch: ['line_supervisor', 'line_attendant'],
-        lab_records: ['stp_supervisor', 'lab_tech'],
-        pond_ops: ['stp_supervisor', 'stp_operator', 'stp_attendant'],
-        summary: ['admin', 'stp_superintendent', 'stp_supervisor']
+        lab_records: ['stp_supervisor', 'lab_tech', 'stp_operator'],
+        pond_ops: ['stp_supervisor', 'stp_operator', 'stp_attendant', 'lab_tech'],
+        alerts: ['stp_operator', 'stp_supervisor', 'lab_tech'],
+        summary: ['admin', 'stp_superintendent', 'stp_supervisor'],
+        team: ['stp_supervisor'],
     };
 
     const hasAccess = (tab) => permissions[tab].includes(userRole);
@@ -62,6 +64,11 @@ const TabNavigation = ({ orientation = 'horizontal' }) => {
                     <i className="fas fa-tint"></i> Ponds
                 </NavLink>
             )}
+            {hasAccess('alerts') && (
+                <NavLink to="/alerts" className={({ isActive }) => isActive ? 'tab active' : 'tab'}>
+                    <i className="fas fa-bell"></i> Alerts
+                </NavLink>
+            )}
             {hasAccess('sludge') && (
                 <NavLink to="/sludge" className={({ isActive }) => isActive ? 'tab active' : 'tab'}>
                     <i className="fas fa-truck"></i> Sludge
@@ -70,6 +77,11 @@ const TabNavigation = ({ orientation = 'horizontal' }) => {
             {hasAccess('dispatch') && (
                 <NavLink to="/dispatch" className={({ isActive }) => isActive ? 'tab active' : 'tab'}>
                     <i className="fas fa-tasks"></i> {userRole === 'line_attendant' ? 'My Tasks' : 'Dispatch'}
+                </NavLink>
+            )}
+            {hasAccess('team') && (
+                <NavLink to="/team" className={({ isActive }) => isActive ? 'tab active' : 'tab'}>
+                    <i className="fas fa-users"></i> Team
                 </NavLink>
             )}
             {hasAccess('summary') && (
