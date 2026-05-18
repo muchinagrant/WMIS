@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useContext } from 'react';
-import api from '../../api/axios';
-import AuthContext from '../../context/AuthContext';
+import api from '../api/axios';
+import AuthContext from '../context/AuthContext';
 
 const NotificationBell = () => {
   const { user } = useContext(AuthContext);
