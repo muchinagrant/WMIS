@@ -48,6 +48,7 @@ const WeeklyPatrolForm = () => {
     const [submittedPatrol, setSubmittedPatrol] = useState(null);
     const [draftPatrol, setDraftPatrol] = useState(null);
     const { isOnline, refreshQueueCount } = useContext(SyncContext);
+    const { user } = useContext(AuthContext);
 
     // Load zones on mount
     useEffect(() => {
