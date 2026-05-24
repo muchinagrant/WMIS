@@ -17,22 +17,30 @@ def emergency_reset(request):
     # 1. Clear all Axes login locks
     try:
         count = reset()
-    except Exception:
-        count = None
+    except Exception as e:
+        count = f"Error: {str(e)}"
 
     # 2. Check which database we are actually connected to
     try:
         with connection.cursor() as cursor:
             cursor.execute("SELECT current_database();")
             db_name = cursor.fetchone()[0]
-    except Exception:
-        db_name = None
+    except Exception as e:
+        db_name = f"Error: {str(e)}"
+
+    # 3. Close and reopen database connection to clear any stuck connections
+    try:
+        connection.close_if_unusable_or_obsolete()
+        db_reset = "Connection reset"
+    except Exception as e:
+        db_reset = f"Error: {str(e)}"
 
     return JsonResponse({
-        "message": "Axes locks cleared!",
-        "locks_removed": count,
+        "message": "Emergency reset completed",
+        "axes_locks_removed": count,
         "connected_to_db": db_name,
-        "status": "Ready for login with kicowasco123"
+        "db_connection_reset": db_reset,
+        "status": "Ready for login"
     })
 
 
