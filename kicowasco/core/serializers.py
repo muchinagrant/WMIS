@@ -1,13 +1,15 @@
+import datetime
+
 from django.utils import timezone
 from rest_framework import serializers
 from .models import (
-    Repair, Attachment, Inspection, InspectionEntry, 
+    RepairAttempt, Attachment, Inspection, InspectionEntry, 
     TreatmentLog, TreatmentParameter, Incident, User,
     Exhauster, ExhausterLicense, SludgeCollection, ConnectionReport, ConnectionApplication,
     SewerLineSection, PatrolRow, WeeklyLinePatrol, InletWorksDailyTask,
     DailyFlowRecord, FlowReading, DailyLabRecord,
     TreatmentPond, PondDailyLog, PondYearlyTask,
-    Zone, SewerLine, Notification, LabComplianceFlag,
+    Zone, SewerLine, Notification, LabComplianceFlag, TeamMembership, FieldMonthlyReport,
 )
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
@@ -419,30 +421,19 @@ class SludgeCollectionSummarySerializer(serializers.Serializer):
     by_month = serializers.DictField(child=serializers.FloatField())
 
 
-class RepairSerializer(serializers.ModelSerializer):
-    technician_name = serializers.ReadOnlyField(source='technician.get_full_name')
-    supervisor_name = serializers.ReadOnlyField(source='supervisor.get_full_name')
-    certified_by_name = serializers.ReadOnlyField(source='certified_by.get_full_name')
+class RepairAttemptSerializer(serializers.ModelSerializer):
+    attendant_name = serializers.ReadOnlyField(source='attendant.get_full_name')
     incident_details = serializers.SerializerMethodField()
     attachments = AttachmentSerializer(many=True, read_only=True)
 
     class Meta:
-        model = Repair
+        model = RepairAttempt
         fields = [
-            'id', 'incident', 'incident_details', 'completion_date', 'location',
-            'repair_type', 'scope_of_work', 'materials_used', 'technician',
-            'technician_name', 'supervisor', 'supervisor_name',
-            'supervisor_signature',
-            'status', 'started_at', 'completed_at', 'certified_at',
-            'certified_by', 'certified_by_name', 'follow_up_required',
-            'created_at', 'updated_at', 'attachments',
+            'id', 'incident', 'incident_details', 'attempt_number',
+            'work_performed', 'materials_used', 'attendant', 'attendant_name',
+            'submitted_at', 'attachments',
         ]
-        read_only_fields = [
-            'supervisor', 'supervisor_signature',
-            'status', 'started_at', 'completed_at',
-            'certified_at', 'certified_by', 'certified_by_name',
-            'created_at', 'updated_at',
-        ]
+        read_only_fields = ['attempt_number', 'submitted_at']
 
     def get_incident_details(self, obj):
         if obj.incident:
@@ -462,7 +453,7 @@ class IncidentSerializer(serializers.ModelSerializer):
     certified_by_name = serializers.ReadOnlyField(source='certified_by.get_full_name')
     zone_name = serializers.ReadOnlyField(source='zone.name')
     duplicate_of_number = serializers.ReadOnlyField(source='duplicate_of.incident_number')
-    repairs = RepairSerializer(many=True, read_only=True)
+    repair_attempts = RepairAttemptSerializer(many=True, read_only=True)
     attachments = AttachmentSerializer(many=True, read_only=True)
 
     class Meta:
@@ -470,6 +461,7 @@ class IncidentSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'incident_number', 'reported_at', 'location_text', 'latitude', 'longitude',
             'assisting_crew', 'category', 'severity', 'reported_by_name',
+            'system_suggested_severity', 'final_severity', 'override_reason',
             'reported_contact', 'description', 'status',
             'duplicate_of', 'duplicate_of_number', 'rejection_reason',
             'assigned_to', 'assigned_to_name', 'received_by', 'received_date',
@@ -478,14 +470,27 @@ class IncidentSerializer(serializers.ModelSerializer):
             'zone', 'zone_name', 'related_incident',
             'assigned_at', 'in_progress_at', 'resolved_at',
             'completed_at', 'certified_by', 'certified_by_name', 'certified_at',
-            'assignment_instructions',
-            'created_by_name', 'created_at', 'updated_at', 'repairs', 'attachments',
+            'assignment_instructions', 'revision_reason',
+            'created_by_name', 'created_at', 'updated_at', 'repair_attempts', 'attachments',
         ]
         read_only_fields = [
             'incident_number', 'duplicate_of', 'duplicate_of_number',
             'rejection_reason', 'created_at', 'updated_at', 'zone_name', 'certified_by_name',
             'assigned_to_name', 'created_by_name',
         ]
+
+    def validate(self, attrs):
+        suggested = attrs.get('system_suggested_severity', getattr(self.instance, 'system_suggested_severity', None))
+        final = attrs.get('final_severity', attrs.get('severity', getattr(self.instance, 'final_severity', None)))
+        override_reason = (attrs.get('override_reason', getattr(self.instance, 'override_reason', '')) or '').strip()
+        if final and suggested and final != suggested and not override_reason:
+            raise serializers.ValidationError({'override_reason': 'Override reason is required when final severity differs from suggested severity.'})
+        if final:
+            attrs['severity'] = final
+            attrs['final_severity'] = final
+        elif 'severity' in attrs:
+            attrs['final_severity'] = attrs['severity']
+        return attrs
 
 
 # --- USER SERIALIZER ---
@@ -496,13 +501,54 @@ class UserSerializer(serializers.ModelSerializer):
     company_code = serializers.ReadOnlyField(source='company.code')
     assigned_tasks_count = serializers.IntegerField(read_only=True)
     assigned_zone_names = serializers.SerializerMethodField()
+    supervisor_name = serializers.SerializerMethodField()
+    supervisor_phone_number = serializers.SerializerMethodField()
+    team_members = serializers.SerializerMethodField()
 
     def get_assigned_zone_names(self, obj):
         return [zone.name for zone in obj.assigned_zones.all()]
+
+    def get_supervisor_name(self, obj):
+        if obj.role != 'line_attendant':
+            return None
+        active_membership = obj.team_memberships.filter(assigned_to__isnull=True).select_related('supervisor').first()
+        return active_membership.supervisor.full_name if active_membership and active_membership.supervisor else None
+
+    def get_supervisor_phone_number(self, obj):
+        if obj.role != 'line_attendant':
+            return None
+        active_membership = obj.team_memberships.filter(assigned_to__isnull=True).select_related('supervisor').first()
+        return active_membership.supervisor.phone_number if active_membership and active_membership.supervisor else None
+
+    def get_team_members(self, obj):
+        if obj.role != 'line_supervisor':
+            return []
+        thirty_days_ago = timezone.now() - datetime.timedelta(days=30)
+        members = []
+        memberships = obj.supervised_attendants.filter(assigned_to__isnull=True).select_related('attendant', 'zone')
+        for membership in memberships:
+            attendant = membership.attendant
+            active_count = Incident.objects.filter(assigned_to=attendant, status__in=['assigned', 'in_progress', 'revision_required']).count()
+            resolved_incidents = Incident.objects.filter(
+                assigned_to=attendant,
+                assigned_at__isnull=False,
+                completed_at__isnull=False,
+                completed_at__gte=thirty_days_ago,
+            )
+            durations = [incident.resolution_time_minutes for incident in resolved_incidents if incident.resolution_time_minutes is not None]
+            members.append({
+                'id': attendant.id,
+                'full_name': attendant.full_name,
+                'assigned_zones': [z.name for z in attendant.assigned_zones.all()],
+                'active_task_count': active_count,
+                'avg_resolution_minutes_30d': int(sum(durations) / len(durations)) if durations else None,
+                'membership_zone': membership.zone.name if membership.zone else None,
+            })
+        return members
     
     class Meta:
         model = User
-        fields = ['id', 'username', 'email', 'phone_number', 'first_name', 'last_name', 'full_name', 'role', 'company', 'company_name', 'company_code', 'assigned_tasks_count', 'assigned_zone_names']
+        fields = ['id', 'username', 'email', 'phone_number', 'employee_id', 'first_name', 'last_name', 'full_name', 'role', 'company', 'company_name', 'company_code', 'assigned_tasks_count', 'assigned_zone_names', 'supervisor_name', 'supervisor_phone_number', 'team_members']
         read_only_fields = ['id', 'username', 'full_name', 'company_name', 'company_code', 'role', 'company']
 
 
@@ -579,8 +625,8 @@ class PatrolRowSerializer(serializers.ModelSerializer):
     class Meta:
         model = PatrolRow
         fields = [
-            'id', 'time', 'sewer_line_section', 'section_code', 'section_is_confirmed',
-            'sewer_line_ref_text', 'abnormality_observed', 'abnormality_details',
+            'id', 'time', 'sewer_line', 'sewer_line_section', 'section_code', 'section_is_confirmed',
+            'sewer_line_ref_text', 'sewer_line_ref_manual', 'is_manual_entry', 'abnormality_observed', 'abnormality_details',
             'new_main_connections', 'new_branch_connections',
             'immediate_action_taken', 'further_action_required',
             'photo', 'photo_url',
@@ -878,7 +924,7 @@ class ZoneSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = Zone
-        fields = ['id', 'name', 'description', 'is_active', 'created_at', 'updated_at']
+        fields = ['id', 'name', 'zone_code', 'description', 'min_lat', 'max_lat', 'min_lon', 'max_lon', 'is_active', 'created_at', 'updated_at']
         read_only_fields = ['created_at', 'updated_at']
 
 
@@ -893,10 +939,33 @@ class SewerLineSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'reference_code', 'zone', 'zone_name', 'description',
             'start_point', 'end_point', 'pipe_material', 'diameter_mm',
-            'length_m', 'installation_date', 'is_active',
+            'length_m', 'installation_date', 'patrol_frequency_per_month', 'is_active',
             'created_at', 'updated_at'
         ]
         read_only_fields = ['created_at', 'updated_at']
+
+
+class TeamMembershipSerializer(serializers.ModelSerializer):
+    supervisor_name = serializers.ReadOnlyField(source='supervisor.full_name')
+    attendant_name = serializers.ReadOnlyField(source='attendant.full_name')
+    zone_name = serializers.ReadOnlyField(source='zone.name')
+
+    class Meta:
+        model = TeamMembership
+        fields = ['id', 'supervisor', 'supervisor_name', 'attendant', 'attendant_name', 'zone', 'zone_name', 'assigned_from', 'assigned_to', 'is_active']
+        read_only_fields = ['assigned_from', 'is_active']
+
+
+class FieldMonthlyReportSerializer(serializers.ModelSerializer):
+    supervisor_name = serializers.ReadOnlyField(source='supervisor.full_name')
+    acknowledged_by_name = serializers.ReadOnlyField(source='acknowledged_by.full_name')
+
+    class Meta:
+        model = FieldMonthlyReport
+        fields = [
+            'id', 'month', 'year', 'supervisor', 'supervisor_name', 'supervisor_notes',
+            'status', 'submitted_at', 'acknowledged_by', 'acknowledged_by_name', 'acknowledged_at'
+        ]
 
 
 # --- NOTIFICATION SERIALIZER (Section 2) ---

@@ -9,6 +9,7 @@ from django.conf import settings
 from rest_framework_simplejwt.views import TokenObtainPairView
 from django.contrib.auth import get_user_model
 from django.utils import timezone
+from django.db import transaction
 from django.db.models import Sum, Avg, Count, Q
 from django.http import HttpResponse
 import calendar
@@ -16,20 +17,20 @@ import csv
 import datetime
 
 from core.models import (
-    Incident, Repair, Inspection, TreatmentLog, Exhauster,
+    Incident, RepairAttempt, Inspection, TreatmentLog, Exhauster,
     ExhausterLicense, SludgeCollection, ConnectionReport, Attachment,
     SewerLineSection, PatrolRow, WeeklyLinePatrol,
     InletWorksDailyTask, DailyFlowRecord, TreatmentParameter, DailyLabRecord,
     MonthlySummarySnapshot, TreatmentPond, PondDailyLog, PondYearlyTask,
-    Zone, SewerLine, Notification, LabComplianceFlag,
+    Zone, SewerLine, Notification, LabComplianceFlag, TeamMembership, FieldMonthlyReport,
 )
 from core.permissions import (
     IsLineSupervisorOrAbove, IsSTPOperatorOrAbove, IsSTPSupervisorOrAbove,
-    IsSTPOperator, IsSTPOperatorOrLabTech,
+    IsSTPOperator, IsSTPOperatorOrLabTech, IsSTPSuperintendent,
 )
 from core.api.mixins import LockEnforcementMixin, ExecutiveReadOnlyMixin, MonthLockEnforcementMixin
 from .serializers import (
-    IncidentSerializer, RepairSerializer, InspectionSerializer,
+    IncidentSerializer, RepairAttemptSerializer, InspectionSerializer,
     TreatmentLogSerializer, ExhausterSerializer, ExhausterLicenseSerializer,
     SludgeCollectionSerializer, ConnectionReportSerializer,
     CustomTokenObtainPairSerializer,
@@ -38,6 +39,7 @@ from .serializers import (
     DailyLabRecordSerializer, AttachmentSerializer, UserSerializer,
     TreatmentPondSerializer, PondDailyLogSerializer, PondYearlyTaskSerializer,
     ZoneSerializer, SewerLineSerializer, NotificationSerializer, LabComplianceFlagSerializer,
+    TeamMembershipSerializer, FieldMonthlyReportSerializer,
 )
 
 
@@ -108,12 +110,23 @@ class IncidentViewSet(ExecutiveReadOnlyMixin, viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         incident = serializer.save(created_by=self.request.user)
-        if incident.severity == 'high':
+        if not incident.system_suggested_severity:
+            incident.system_suggested_severity = incident.severity
+        if not incident.final_severity:
+            incident.final_severity = incident.severity
+        incident.save(update_fields=['system_suggested_severity', 'final_severity'])
+        if incident.severity in {'high', 'critical'}:
             reporter = incident.reported_by_name or self.request.user.get_full_name() or self.request.user.username
+            body = f'⚠ CRITICAL INCIDENT: {incident.get_category_display()} reported at {incident.location_text} by {reporter}. Immediate action required.'
+            if incident.system_suggested_severity and incident.final_severity and incident.system_suggested_severity != incident.final_severity:
+                body = (
+                    f'⚠ CRITICAL INCIDENT (manually escalated): {incident.get_category_display()} at {incident.location_text}. '
+                    f'Attendant override reason: {incident.override_reason or "No reason provided"}.'
+                )
             _notify_roles(
                 ['line_supervisor'],
                 'Critical Incident Alert',
-                f'⚠ CRITICAL INCIDENT: {incident.get_category_display()} reported at {incident.location_text} by {reporter}. Immediate action required.',
+                body,
                 notification_type='incident_critical',
                 link_url='/dispatch',
             )
@@ -174,13 +187,14 @@ class IncidentViewSet(ExecutiveReadOnlyMixin, viewsets.ModelViewSet):
             technician = User.objects.get(id=user_id)
             if getattr(request.user, 'company_id', None) and technician.company_id != request.user.company_id:
                 return Response({'error': 'Cannot assign incidents across companies.'}, status=status.HTTP_403_FORBIDDEN)
-            
-            # UPGRADED: Advance state machine AND automate the SLA timer
-            incident.assigned_to = technician
-            incident.assisting_crew = assisting_crew
-            incident.status = 'assigned'
-            incident.assigned_at = timezone.now()  # <-- AUTOMATED TIMESTAMP
-            incident.save()
+
+            with transaction.atomic():
+                incident.assigned_to = technician
+                incident.assisting_crew = assisting_crew
+                incident.status = 'assigned'
+                incident.assigned_at = timezone.now()
+                incident.assignment_instructions = request.data.get('assignment_instructions', request.data.get('instructions', ''))
+                incident.save(update_fields=['assigned_to', 'assisting_crew', 'status', 'assigned_at', 'assignment_instructions', 'updated_at'])
 
             _notify_user(
                 technician,
@@ -221,6 +235,9 @@ class IncidentViewSet(ExecutiveReadOnlyMixin, viewsets.ModelViewSet):
             elif new_status == 'pending_certification':
                 if incident.assigned_to != request.user:
                     return Response({'error': 'Unauthorized.'}, status=status.HTTP_403_FORBIDDEN)
+                latest_attempt = incident.repair_attempts.order_by('-attempt_number').first()
+                if latest_attempt is None:
+                    return Response({'error': 'A repair attempt is required before submitting for certification.'}, status=status.HTTP_400_BAD_REQUEST)
                 
             elif new_status in ['resolved', 'closed']:
                 return Response({
@@ -235,6 +252,8 @@ class IncidentViewSet(ExecutiveReadOnlyMixin, viewsets.ModelViewSet):
         incident.status = new_status
         if new_status == 'pending_certification' and request.user.role == 'line_attendant':
             incident.completed_at = timezone.now()
+        if new_status == 'revision_required':
+            incident.revision_reason = request.data.get('revision_reason', '')
         incident.save()
 
         if old_status != 'pending_certification' and new_status == 'pending_certification' and incident.assigned_to == request.user:
@@ -256,7 +275,16 @@ class IncidentViewSet(ExecutiveReadOnlyMixin, viewsets.ModelViewSet):
     def my_tasks(self, request):
         tasks = Incident.objects.filter(
             assigned_to=request.user,
-            status__in=['assigned', 'in_progress', 'completed', 'pending_certification']
+            status__in=['assigned', 'in_progress', 'pending_certification', 'revision_required', 'closed']
+        ).order_by('-updated_at')
+        serializer = self.get_serializer(tasks, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated], url_path='my-tasks', url_name='my-tasks')
+    def my_tasks_hyphen(self, request):
+        tasks = Incident.objects.filter(
+            assigned_to=request.user,
+            status__in=['assigned', 'in_progress', 'pending_certification', 'revision_required', 'closed']
         ).order_by('-updated_at')
         serializer = self.get_serializer(tasks, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
@@ -269,18 +297,90 @@ class IncidentViewSet(ExecutiveReadOnlyMixin, viewsets.ModelViewSet):
             return Response({'error': 'Incident not found.'}, status=status.HTTP_404_NOT_FOUND)
 
         if getattr(request.user, 'role', '') != 'line_supervisor':
-            return Response({'error': 'Only line supervisors can certify incidents.'}, status=status.HTTP_403_FORBIDDEN)
+            return Response({'error': 'Only a line supervisor can certify incidents.'}, status=status.HTTP_403_FORBIDDEN)
 
         if incident.status != 'pending_certification':
-            return Response({'error': f'Incident must be pending_certification before certifying. Current status: {incident.status}.'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'error': f'This incident is not in pending certification status. Current status: {incident.status}.'}, status=status.HTTP_400_BAD_REQUEST)
 
         incident.status = 'closed'
         incident.certified_by = request.user
         incident.certified_at = timezone.now()
+        if 'certification_notes' in request.data:
+            incident.assignment_instructions = request.data.get('certification_notes', '')
         incident.save(update_fields=['status', 'certified_by', 'certified_at', 'updated_at'])
+
+        _notify_user(
+            incident.assigned_to,
+            'Incident Certified',
+            f'Your repair on {incident.incident_number} — {incident.get_category_display()} at {incident.location_text} has been certified by {request.user.full_name}.',
+            notification_type='task_completed',
+            link_url='/my-tasks',
+            related_incident=incident,
+        )
 
         serializer = self.get_serializer(incident)
         return Response(serializer.data, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated, IsLineSupervisorOrAbove])
+    def send_back(self, request, pk=None):
+        incident = self.get_object()
+        reason = (request.data.get('reason') or '').strip()
+        if not reason:
+            return Response({'error': 'Reason for returning is required.'}, status=status.HTTP_400_BAD_REQUEST)
+        if incident.status != 'pending_certification':
+            return Response({'error': f'Incident must be pending_certification to send back. Current status: {incident.status}.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        incident.status = 'revision_required'
+        incident.revision_reason = reason
+        incident.save(update_fields=['status', 'revision_reason', 'updated_at'])
+
+        _notify_user(
+            incident.assigned_to,
+            'Revision Required',
+            f'{request.user.full_name} returned {incident.incident_number} for revision: {reason}. Tap to view in My Tasks.',
+            notification_type='task_assigned',
+            link_url='/my-tasks',
+            related_incident=incident,
+        )
+        return Response(self.get_serializer(incident).data, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated])
+    def submit_attempt(self, request, pk=None):
+        incident = self.get_object()
+        if incident.assigned_to_id != request.user.id:
+            return Response({'error': 'Only assigned attendant can submit attempt.'}, status=status.HTTP_403_FORBIDDEN)
+
+        work_performed = (request.data.get('work_performed') or '').strip()
+        if not work_performed:
+            return Response({'error': 'work_performed is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        last_attempt = incident.repair_attempts.order_by('-attempt_number').first()
+        next_attempt_number = (last_attempt.attempt_number + 1) if last_attempt else 1
+        attempt = RepairAttempt.objects.create(
+            incident=incident,
+            attempt_number=next_attempt_number,
+            work_performed=work_performed,
+            materials_used=request.data.get('materials_used', ''),
+            attendant=request.user,
+        )
+
+        incident.status = 'pending_certification'
+        incident.completed_at = timezone.now()
+        incident.save(update_fields=['status', 'completed_at', 'updated_at'])
+
+        supervisors = User.objects.filter(role='line_supervisor')
+        for supervisor in supervisors:
+            _notify_user(
+                supervisor,
+                'Task Completion Pending Certification',
+                f'{request.user.full_name} has completed {incident.get_category_display()} at {incident.location_text}. Pending your certification.',
+                notification_type='task_completed',
+                link_url='/dispatch',
+                related_incident=incident,
+            )
+
+        serializer = RepairAttemptSerializer(attempt, context={'request': request})
+        return Response({'attempt': serializer.data, 'incident': self.get_serializer(incident).data}, status=status.HTTP_201_CREATED)
 
     @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated])
     def search(self, request):
@@ -315,80 +415,16 @@ class IncidentViewSet(ExecutiveReadOnlyMixin, viewsets.ModelViewSet):
 
 
 class RepairViewSet(LockEnforcementMixin, ExecutiveReadOnlyMixin, viewsets.ModelViewSet):
-    queryset = Repair.objects.all().order_by('-created_at')
-    serializer_class = RepairSerializer
+    queryset = RepairAttempt.objects.all().order_by('-submitted_at')
+    serializer_class = RepairAttemptSerializer
     permission_classes = [IsAuthenticated]
     parser_classes = (MultiPartParser, FormParser)
-    locked_values = {'certified'}
-    lock_error_message = 'Repair already certified and locked. Use reopen to make further changes.'
 
     def perform_create(self, serializer):
-        serializer.save(technician=self.request.user)
-
-    @action(detail=True, methods=['patch'])
-    def start(self, request, pk=None):
-        repair = self.get_object()
-        if repair.status not in ('created', 'reopened'):
-            return Response(
-                {'error': f'Cannot start a repair with status "{repair.status}".'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        repair.status = 'started'
-        repair.started_at = timezone.now()
-        repair.save()
-        return Response(self.get_serializer(repair).data)
-
-    @action(detail=True, methods=['patch'])
-    def complete(self, request, pk=None):
-        repair = self.get_object()
-        if repair.status not in ('started', 'reopened'):
-            return Response(
-                {'error': f'Cannot complete a repair with status "{repair.status}".'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        repair.status = 'completed'
-        repair.completed_at = timezone.now()
-        repair.save()
-        return Response(self.get_serializer(repair).data)
-
-    @action(detail=True, methods=['patch'], permission_classes=[IsAuthenticated, IsLineSupervisorOrAbove])
-    def certify(self, request, pk=None):
-        repair = self.get_object()
-        if repair.status == 'certified':
-            return Response({'error': 'This repair has already been certified.'}, status=status.HTTP_400_BAD_REQUEST)
-        signature = request.FILES.get('supervisor_signature')
-        if not signature:
-            return Response({'error': 'Supervisor signature is required to certify a repair.'}, status=status.HTTP_400_BAD_REQUEST)
-        repair.status = 'certified'
-        repair.supervisor = request.user
-        repair.certified_by = request.user
-        repair.supervisor_signature = signature
-        repair.certified_at = timezone.now()
-        repair.save()
-        if repair.incident:
-            repair.incident.status = 'resolved'
-            repair.incident.resolved_at = timezone.now()
-            repair.incident.save()
-        return Response(self.get_serializer(repair).data, status=status.HTTP_200_OK)
-
-    @action(detail=True, methods=['patch'], permission_classes=[IsAuthenticated, IsLineSupervisorOrAbove])
-    def reopen(self, request, pk=None):
-        repair = self.get_object()
-        if repair.status not in ('certified', 'completed'):
-            return Response(
-                {'error': 'Only certified or completed repairs can be reopened.'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        repair.status = 'reopened'
-        repair.follow_up_required = True
-        repair.certified_at = None
-        repair.certified_by = None
-        repair.save()
-        if repair.incident:
-            repair.incident.status = 'in_progress'
-            repair.incident.resolved_at = None
-            repair.incident.save()
-        return Response(self.get_serializer(repair).data)
+        incident = serializer.validated_data['incident']
+        last_attempt = incident.repair_attempts.order_by('-attempt_number').first()
+        attempt_number = (last_attempt.attempt_number + 1) if last_attempt else 1
+        serializer.save(attendant=self.request.user, attempt_number=attempt_number)
 
 class InspectionViewSet(ExecutiveReadOnlyMixin, viewsets.ModelViewSet):
     queryset = Inspection.objects.all().order_by('-start_date')
@@ -948,6 +984,9 @@ class UserViewSet(viewsets.ModelViewSet):
         thirty_days_ago = timezone.now() - datetime.timedelta(days=30)
 
         if instance.role == 'line_attendant':
+            membership = TeamMembership.objects.filter(attendant=instance, assigned_to__isnull=True).select_related('supervisor').first()
+            response.data['supervisor_name'] = membership.supervisor.full_name if membership and membership.supervisor else None
+            response.data['supervisor_phone_number'] = membership.supervisor.phone_number if membership and membership.supervisor else None
             resolved_incidents = Incident.objects.filter(
                 assigned_to=instance,
                 assigned_at__isnull=False,
@@ -958,9 +997,10 @@ class UserViewSet(viewsets.ModelViewSet):
             response.data['avg_resolution_minutes_30d'] = int(sum(durations) / len(durations)) if durations else None
 
         if instance.role == 'line_supervisor':
-            attendants = User.objects.filter(role='line_attendant')
+            memberships = TeamMembership.objects.filter(supervisor=instance, assigned_to__isnull=True).select_related('attendant', 'zone')
             per_attendant = []
-            for attendant in attendants:
+            for membership in memberships:
+                attendant = membership.attendant
                 resolved_incidents = Incident.objects.filter(
                     assigned_to=attendant,
                     assigned_at__isnull=False,
@@ -968,9 +1008,13 @@ class UserViewSet(viewsets.ModelViewSet):
                     completed_at__gte=thirty_days_ago,
                 )
                 durations = [incident.resolution_time_minutes for incident in resolved_incidents if incident.resolution_time_minutes is not None]
+                active_count = Incident.objects.filter(assigned_to=attendant, status__in=['assigned', 'in_progress', 'revision_required']).count()
                 per_attendant.append({
                     'attendant_id': attendant.id,
                     'attendant_name': attendant.get_full_name() or attendant.username,
+                    'assigned_zones': [z.name for z in attendant.assigned_zones.all()],
+                    'membership_zone': membership.zone.name if membership.zone else None,
+                    'active_task_count': active_count,
                     'avg_resolution_minutes_30d': int(sum(durations) / len(durations)) if durations else None,
                 })
             response.data['team_avg_resolution_minutes_30d'] = per_attendant
@@ -1225,8 +1269,8 @@ class SummaryViewSet(APIView):
 
         new_main = patrol_rows.aggregate(Sum('new_main_connections'))['new_main_connections__sum'] or 0
         new_branch = patrol_rows.aggregate(Sum('new_branch_connections'))['new_branch_connections__sum'] or 0
-        repairs_completed = Repair.objects.filter(completion_date__year=year, completion_date__month=month).count()
-        repairs_certified = Repair.objects.filter(certified_at__year=year, certified_at__month=month).count()
+        repairs_completed = RepairAttempt.objects.filter(submitted_at__year=year, submitted_at__month=month).count()
+        repairs_certified = Incident.objects.filter(certified_at__year=year, certified_at__month=month).count()
 
         lab_qs = DailyLabRecord.objects.filter(record_date__year=year, record_date__month=month)
 
@@ -1513,6 +1557,130 @@ class ZoneViewSet(viewsets.ModelViewSet):
         self._ensure_admin(request)
         return super().partial_update(request, *args, **kwargs)
 
+    @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated], url_path='detect')
+    def detect(self, request):
+        try:
+            lat = float(request.query_params.get('lat'))
+            lon = float(request.query_params.get('lon'))
+        except (TypeError, ValueError):
+            return Response({'zone': None}, status=status.HTTP_200_OK)
+
+        zone = Zone.objects.filter(
+            is_active=True,
+            min_lat__isnull=False,
+            max_lat__isnull=False,
+            min_lon__isnull=False,
+            max_lon__isnull=False,
+            min_lat__lte=lat,
+            max_lat__gte=lat,
+            min_lon__lte=lon,
+            max_lon__gte=lon,
+        ).first()
+        if not zone:
+            return Response({'zone': None}, status=status.HTTP_200_OK)
+        return Response({'zone': ZoneSerializer(zone, context={'request': request}).data}, status=status.HTTP_200_OK)
+
+
+class TeamMembershipViewSet(viewsets.ModelViewSet):
+    queryset = TeamMembership.objects.select_related('supervisor', 'attendant', 'zone').all().order_by('-assigned_from')
+    serializer_class = TeamMembershipSerializer
+    permission_classes = [IsAuthenticated]
+
+    def _ensure_admin(self, request):
+        if getattr(request.user, 'role', '') != 'admin':
+            raise PermissionDenied('Only admin users can manage team memberships.')
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        active_only = str(self.request.query_params.get('active', '')).lower() in {'1', 'true', 'yes', 'on'}
+        if active_only:
+            qs = qs.filter(assigned_to__isnull=True)
+        return qs
+
+    def create(self, request, *args, **kwargs):
+        self._ensure_admin(request)
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        attendant = serializer.validated_data['attendant']
+        active = TeamMembership.objects.filter(attendant=attendant, assigned_to__isnull=True).first()
+        if active:
+            active.assigned_to = timezone.now().date()
+            active.save(update_fields=['assigned_to'])
+        membership = serializer.save()
+        return Response(self.get_serializer(membership).data, status=status.HTTP_201_CREATED)
+
+    def partial_update(self, request, *args, **kwargs):
+        self._ensure_admin(request)
+        instance = self.get_object()
+        if request.data.get('assigned_to') == 'today':
+            instance.assigned_to = timezone.now().date()
+            instance.save(update_fields=['assigned_to'])
+            return Response(self.get_serializer(instance).data, status=status.HTTP_200_OK)
+        return super().partial_update(request, *args, **kwargs)
+
+
+class FieldMonthlyReportViewSet(viewsets.ModelViewSet):
+    queryset = FieldMonthlyReport.objects.select_related('supervisor', 'acknowledged_by').all().order_by('-year', '-month')
+    serializer_class = FieldMonthlyReportSerializer
+    permission_classes = [IsAuthenticated]
+
+    @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated], url_path='compile')
+    def compile(self, request):
+        try:
+            month = int(request.query_params.get('month'))
+            year = int(request.query_params.get('year'))
+        except (TypeError, ValueError):
+            return Response({'error': 'month and year are required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        incidents = Incident.objects.filter(reported_at__year=year, reported_at__month=month)
+        closed = incidents.filter(status='closed')
+        recurring = (
+            incidents.filter(related_incident__isnull=False)
+            .values('location_text')
+            .annotate(count=Count('id'))
+            .filter(count__gt=1)
+            .order_by('-count')
+        )
+
+        patrol_summary = []
+        for line in SewerLine.objects.filter(is_active=True).select_related('zone'):
+            submitted = PatrolRow.objects.filter(
+                sewer_line=line,
+                weekly_patrol__date__year=year,
+                weekly_patrol__date__month=month,
+                weekly_patrol__status__in=['submitted', 'verified'],
+            ).count()
+            patrol_summary.append({
+                'line_ref': line.reference_code,
+                'zone': line.zone.name,
+                'expected': line.patrol_frequency_per_month,
+                'submitted': submitted,
+            })
+
+        durations = [i.resolution_time_minutes for i in closed if i.resolution_time_minutes is not None]
+
+        return Response({
+            'total_incidents': incidents.count(),
+            'incidents_by_category': list(incidents.values('category').annotate(count=Count('id')).order_by('-count')),
+            'incidents_by_zone': list(incidents.values('zone__name').annotate(count=Count('id')).order_by('-count')),
+            'incidents_by_priority': list(incidents.values('severity').annotate(count=Count('id')).order_by('-count')),
+            'resolved_incidents': closed.count(),
+            'unresolved_incidents': incidents.exclude(status='closed').count(),
+            'avg_resolution_minutes': int(sum(durations) / len(durations)) if durations else None,
+            'certifications_completed': incidents.filter(certified_at__year=year, certified_at__month=month).count(),
+            'patrol_compliance': patrol_summary,
+            'recurring_locations': list(recurring),
+        }, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated, IsSTPSuperintendent], url_path='acknowledge')
+    def acknowledge(self, request, pk=None):
+        report = self.get_object()
+        report.status = 'acknowledged'
+        report.acknowledged_by = request.user
+        report.acknowledged_at = timezone.now()
+        report.save(update_fields=['status', 'acknowledged_by', 'acknowledged_at'])
+        return Response(self.get_serializer(report).data, status=status.HTTP_200_OK)
+
 
 # --- SEWER LINE VIEWSET (Section 3.2) ---
 
@@ -1542,6 +1710,45 @@ class SewerLineViewSet(viewsets.ModelViewSet):
     def partial_update(self, request, *args, **kwargs):
         self._ensure_admin(request)
         return super().partial_update(request, *args, **kwargs)
+
+    @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated], url_path='patrol-compliance')
+    def patrol_compliance(self, request):
+        today = timezone.now().date()
+        zone_id = request.query_params.get('zone')
+        lines = self.get_queryset()
+        if zone_id:
+            lines = lines.filter(zone_id=zone_id)
+
+        data = []
+        for line in lines.select_related('zone'):
+            submitted = PatrolRow.objects.filter(
+                sewer_line=line,
+                weekly_patrol__date__year=today.year,
+                weekly_patrol__date__month=today.month,
+                weekly_patrol__status__in=['submitted', 'verified'],
+            ).count()
+            expected = line.patrol_frequency_per_month
+            if submitted >= expected:
+                status_label = 'On Track'
+                status_color = 'green'
+            elif submitted > 0:
+                status_label = 'Behind'
+                status_color = 'amber'
+            elif today.day > 7:
+                status_label = 'Overdue'
+                status_color = 'red'
+            else:
+                status_label = 'Behind'
+                status_color = 'amber'
+            data.append({
+                'line_reference': line.reference_code,
+                'zone': line.zone.name,
+                'expected': expected,
+                'submitted': submitted,
+                'status': status_label,
+                'status_color': status_color,
+            })
+        return Response(data, status=status.HTTP_200_OK)
 
 
 # --- NOTIFICATION VIEWSET (Section 2) ---

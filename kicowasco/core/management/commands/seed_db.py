@@ -14,7 +14,7 @@ from core.models import (
     Incident,
     PondDailyLog,
     PondYearlyTask,
-    Repair,
+    RepairAttempt,
     SewerLineSection,
     PatrolRow,
     SludgeCollection,
@@ -284,16 +284,12 @@ class Command(BaseCommand):
                     incident.status = "pending_certification"
                     incident.save()
 
-                    Repair.objects.create(
+                    RepairAttempt.objects.create(
                         incident=incident,
-                        completion_date=sim_date,
-                        location=incident.location_text,
-                        repair_type="rodding" if category == "blockage" else "pipe_replacement",
-                        scope_of_work=f"Attended to {category}. Flushed lines and verified flow.",
+                        attempt_number=1,
+                        work_performed=f"Attended to {category}. Flushed lines and verified flow.",
                         materials_used="2 units PVC, 1 unit cement" if category == "burst" else "None",
-                        technician=users_dict["Kevin"],
-                        supervisor=users_dict["linespv"] if status_choice == "resolved" else None,
-                        certified_at=(reported_at + timedelta(hours=5)) if status_choice == "resolved" else None,
+                        attendant=users_dict["Kevin"],
                     )
 
                 if status_choice == "resolved":

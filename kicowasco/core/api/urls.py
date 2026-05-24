@@ -12,6 +12,7 @@ from .views import (
     UserViewSet,
     AttachmentViewSet,
     ZoneViewSet, SewerLineViewSet, NotificationViewSet,
+    TeamMembershipViewSet, FieldMonthlyReportViewSet,
 )
 
 # Create a router and register our viewsets with it.
@@ -29,6 +30,8 @@ router.register(r'attachments', AttachmentViewSet, basename='attachment')
 router.register(r'zones', ZoneViewSet, basename='zone')
 router.register(r'sewer-lines', SewerLineViewSet, basename='sewerline')
 router.register(r'notifications', NotificationViewSet, basename='notification')
+router.register(r'team-memberships', TeamMembershipViewSet, basename='teammembership')
+router.register(r'field-monthly-report', FieldMonthlyReportViewSet, basename='fieldmonthlyreport')
 
 # Registering the new operational templates
 router.register(r'sewer-line-sections', SewerLineSectionViewSet, basename='sewerlinesection')

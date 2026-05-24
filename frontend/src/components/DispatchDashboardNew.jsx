@@ -17,9 +17,12 @@ const DispatchDashboardNew = () => {
     const [selectedIncident, setSelectedIncident] = useState(null);
     const [certificationModal, setCertificationModal] = useState(null);
     const [certNotes, setCertNotes] = useState('');
+    const [sendBackReason, setSendBackReason] = useState('');
+    const [historyOverridesOnly, setHistoryOverridesOnly] = useState(false);
     const { addToQueue } = useContext(SyncContext);
 
     const priorityColors = {
+        critical: '#DC2626',
         high: '#DC2626',
         medium: '#CA8A04',
         low: '#16A34A',
@@ -29,6 +32,7 @@ const DispatchDashboardNew = () => {
         new: '#6B7280',
         assigned: '#3B82F6',
         in_progress: '#F59E0B',
+        revision_required: '#EF4444',
         pending_certification: '#8B5CF6',
         resolved: '#10B981',
         closed: '#10B981',
@@ -57,7 +61,7 @@ const DispatchDashboardNew = () => {
         setLoading(true);
         try {
             // Load all status categories with correct lowercase values
-            const statuses = ['new', 'assigned', 'in_progress', 'pending_certification', 'closed'];
+            const statuses = ['new', 'assigned', 'in_progress', 'revision_required', 'pending_certification', 'closed'];
             const responses = await Promise.all(
                 statuses.map((status) => api.get(`/api/incidents/?status=${status}`))
             );
@@ -67,9 +71,10 @@ const DispatchDashboardNew = () => {
                 in_progress: [
                     ...(Array.isArray(responses[1].data) ? responses[1].data : (responses[1].data?.results || [])),
                     ...(Array.isArray(responses[2].data) ? responses[2].data : (responses[2].data?.results || [])),
+                    ...(Array.isArray(responses[3].data) ? responses[3].data : (responses[3].data?.results || [])),
                 ],
-                pending_certification: Array.isArray(responses[3].data) ? responses[3].data : (responses[3].data?.results || []),
-                history: Array.isArray(responses[4].data) ? responses[4].data : (responses[4].data?.results || []),
+                pending_certification: Array.isArray(responses[4].data) ? responses[4].data : (responses[4].data?.results || []),
+                history: Array.isArray(responses[5].data) ? responses[5].data : (responses[5].data?.results || []),
             };
 
             setIncidents(data);
@@ -83,13 +88,12 @@ const DispatchDashboardNew = () => {
     const handleAssignTask = async (incidentId, values) => {
         try {
             const payload = {
-                status: 'assigned',
-                assigned_to: values.lead_plumber,
-                assigned_at: new Date().toISOString(),
+                user_id: values.lead_plumber,
+                assisting_crew: values.assisting_crew,
                 assignment_instructions: values.instructions,
             };
 
-            await api.patch(`/api/incidents/${incidentId}/`, payload);
+            await api.post(`/api/incidents/${incidentId}/assign/`, payload);
 
             // Update local state
             setIncidents({
@@ -97,7 +101,7 @@ const DispatchDashboardNew = () => {
                 unassigned: incidents.unassigned.filter((i) => i.id !== incidentId),
                 in_progress: [
                     ...incidents.in_progress,
-                    { ...selectedIncident, ...payload },
+                    { ...selectedIncident, status: 'assigned', assigned_to: values.lead_plumber, assignment_instructions: values.instructions },
                 ],
             });
 
@@ -107,9 +111,9 @@ const DispatchDashboardNew = () => {
             console.error('Failed to assign task:', error);
             if (addToQueue) {
                 addToQueue({
-                    method: 'PATCH',
-                    url: `/api/incidents/${incidentId}/`,
-                    data: { status: 'assigned', assigned_to: values.lead_plumber },
+                    method: 'POST',
+                    url: `/api/incidents/${incidentId}/assign/`,
+                    data: { user_id: values.lead_plumber, assignment_instructions: values.instructions, assisting_crew: values.assisting_crew },
                 });
             }
         }
@@ -120,10 +124,15 @@ const DispatchDashboardNew = () => {
             if (isApproved) {
                 await api.post(`/api/incidents/${incidentId}/certify/`, { certification_notes: certNotes });
             } else {
-                await api.post(`/api/incidents/${incidentId}/update_status/`, { status: 'in_progress' });
+                if (!sendBackReason.trim()) {
+                    alert('Reason for returning is required.');
+                    return;
+                }
+                await api.post(`/api/incidents/${incidentId}/send_back/`, { reason: sendBackReason });
             }
             setCertificationModal(null);
             setCertNotes('');
+            setSendBackReason('');
             loadIncidents();
         } catch (error) {
             console.error('Failed to certify incident:', error);
@@ -136,17 +145,26 @@ const DispatchDashboardNew = () => {
             return;
         }
 
-        const csvHeaders = ['Reference', 'Category', 'Severity', 'Zone', 'Date Reported', 'Reported By', 'Assigned To', 'Status', 'Completed Date'];
-        const csvRows = incidents.history.map((incident) => [
+        const csvHeaders = ['Reference', 'Category', 'Priority', 'Zone', 'Location', 'Reporter', 'Reported At', 'Assigned To', 'Assigned At', 'Completed At', 'Certified By', 'Certified At', 'Resolution Time (minutes)'];
+        const list = historyOverridesOnly
+            ? incidents.history.filter((incident) => incident.system_suggested_severity && incident.final_severity && incident.system_suggested_severity !== incident.final_severity)
+            : incidents.history;
+        const csvRows = list.map((incident) => [
             incident.incident_number,
             incident.category,
             incident.severity,
             incident.zone_name || 'N/A',
-            new Date(incident.created_at).toLocaleDateString(),
+            incident.location_text || 'N/A',
             incident.reported_by_name || 'N/A',
+            incident.created_at ? new Date(incident.created_at).toLocaleString() : 'N/A',
             incident.assigned_to_name || 'N/A',
-            incident.status,
-            incident.completed_at ? new Date(incident.completed_at).toLocaleDateString() : 'N/A',
+            incident.assigned_at ? new Date(incident.assigned_at).toLocaleString() : 'N/A',
+            incident.completed_at ? new Date(incident.completed_at).toLocaleString() : 'N/A',
+            incident.certified_by_name || 'N/A',
+            incident.certified_at ? new Date(incident.certified_at).toLocaleString() : 'N/A',
+            incident.assigned_at && incident.completed_at
+                ? Math.round((new Date(incident.completed_at) - new Date(incident.assigned_at)) / 60000)
+                : '',
         ]);
 
         const csv = [csvHeaders, ...csvRows].map((row) => row.join(',')).join('\n');
@@ -302,6 +320,9 @@ const DispatchDashboardNew = () => {
                     <div>
                         <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '6px' }}>
                             <strong style={{ fontSize: '1.05rem', color: '#0f172a' }}>{incident.incident_number}</strong>
+                            {incident.system_suggested_severity && incident.final_severity && incident.system_suggested_severity !== incident.final_severity && (
+                                <span title="Priority was manually changed by attendant" style={{ color: '#d97706', fontSize: '0.95rem' }}>⚠</span>
+                            )}
                             <span
                                 style={{
                                     fontSize: '0.8rem',
@@ -426,7 +447,9 @@ const DispatchDashboardNew = () => {
     };
 
     const renderTabContent = () => {
-        const tabIncidents = incidents[activeTab];
+        const tabIncidents = activeTab === 'history' && historyOverridesOnly
+            ? incidents.history.filter((incident) => incident.system_suggested_severity && incident.final_severity && incident.system_suggested_severity !== incident.final_severity)
+            : incidents[activeTab];
         if (loading) {
             return (
                 <div style={{ textAlign: 'center', padding: '40px', color: '#64748b' }}>
@@ -494,6 +517,13 @@ const DispatchDashboardNew = () => {
                 ))}
 
                 {/* CSV Export Button for History Tab */}
+                {activeTab === 'history' && (
+                    <label style={{ marginLeft: '12px', display: 'inline-flex', alignItems: 'center', gap: '6px', color: '#64748b', fontSize: '0.9rem' }}>
+                        <input type="checkbox" checked={historyOverridesOnly} onChange={(e) => setHistoryOverridesOnly(e.target.checked)} />
+                        Overrides only
+                    </label>
+                )}
+
                 {activeTab === 'history' && (
                     <button
                         onClick={exportToCSV}
@@ -571,11 +601,30 @@ const DispatchDashboardNew = () => {
                         />
                     </div>
 
+                    <div style={{ marginBottom: '16px' }}>
+                        <label style={{ fontSize: '0.9rem', fontWeight: 600, marginBottom: '6px', display: 'block' }}>Reason for Returning (required for Send Back)</label>
+                        <textarea
+                            value={sendBackReason}
+                            onChange={(e) => setSendBackReason(e.target.value)}
+                            placeholder="Explain what needs revision before certification"
+                            style={{
+                                width: '100%',
+                                padding: '10px',
+                                borderRadius: '4px',
+                                border: '1px solid #fecaca',
+                                minHeight: '80px',
+                                fontFamily: 'inherit',
+                                fontSize: '0.95rem',
+                            }}
+                        />
+                    </div>
+
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px' }}>
                         <button
                             onClick={() => {
                                 setCertificationModal(null);
                                 setCertNotes('');
+                                setSendBackReason('');
                             }}
                             style={{
                                 padding: '10px',

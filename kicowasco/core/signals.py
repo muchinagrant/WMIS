@@ -4,11 +4,11 @@ from django.core.serializers.json import DjangoJSONEncoder
 from django.db.models.signals import pre_save, post_save, post_delete
 from django.dispatch import receiver
 from django.forms.models import model_to_dict
-from .models import AuditLog, Incident, Repair
+from .models import AuditLog, Incident, RepairAttempt
 from .middleware import get_current_user
 
 # List of models we want to audit
-AUDITABLE_MODELS = [Incident, Repair]
+AUDITABLE_MODELS = [Incident, RepairAttempt]
 
 def get_model_state(instance):
     """Helper to convert a model instance to a dictionary for JSON storage."""

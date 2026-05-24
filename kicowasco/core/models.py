@@ -45,6 +45,7 @@ class User(AbstractUser):
     # FCM token for push notifications
     fcm_token = models.TextField(blank=True, null=True, help_text="Firebase Cloud Messaging token for push notifications")
     phone_number = models.CharField(max_length=20, blank=True, help_text="User's phone number for notifications")
+    employee_id = models.CharField(max_length=30, blank=True, null=True, unique=True, help_text="Format: KCW-YYYY-NNN")
     
     # Assigned zones/areas for line_attendant
     assigned_zones = models.ManyToManyField('Zone', blank=True, related_name='assigned_attendants', help_text="Zones assigned to this line attendant")
@@ -69,6 +70,7 @@ class Incident(models.Model):
         ('new', 'New'),
         ('assigned', 'Assigned'),
         ('in_progress', 'In Progress'),
+        ('revision_required', 'Revision Required'),
         ('on_hold_materials', 'On Hold - Awaiting Materials'),
         ('on_hold_equipment', 'On Hold - Requires Equipment/Excavator'),
         ('pending_certification', 'Pending Certification'),
@@ -90,6 +92,7 @@ class Incident(models.Model):
     ]
 
     SEVERITY_CHOICES = [
+        ('critical', 'Critical (Emergency)'),
         ('high', 'High (Emergency/Critical)'),
         ('medium', 'Medium (Urgent/Operational)'),
         ('low', 'Low (Routine/Minor)'),
@@ -127,6 +130,9 @@ class Incident(models.Model):
     # Upgraded Classification
     category = models.CharField(max_length=50, choices=CATEGORY_CHOICES, default='other')
     severity = models.CharField(max_length=20, choices=SEVERITY_CHOICES, default='low')
+    system_suggested_severity = models.CharField(max_length=20, choices=SEVERITY_CHOICES, default='low')
+    final_severity = models.CharField(max_length=20, choices=SEVERITY_CHOICES, default='low')
+    override_reason = models.TextField(blank=True)
     
     reported_by_name = models.CharField(max_length=200)
     reported_contact = models.CharField(max_length=100, blank=True)
@@ -184,6 +190,7 @@ class Incident(models.Model):
     
     # Assignment instructions (Section 6.3)
     assignment_instructions = models.TextField(blank=True, help_text="Additional notes from supervisor during assignment")
+    revision_reason = models.TextField(blank=True)
 
     # Signatures
     foreman_signed_by = models.ForeignKey(
@@ -236,76 +243,30 @@ class Incident(models.Model):
         return None
 
 
-# --- REPAIR MANAGEMENT MODELS ---
-class Repair(models.Model):
-    """
-    Model for repair completion certificates linked to incidents.
-    Acts as the worker's manual log of what was fixed.
-    """
-    REPAIR_STATUS = [
-        ('created', 'Created'),
-        ('started', 'Started'),
-        ('completed', 'Completed'),
-        ('certified', 'Certified'),
-        ('reopened', 'Reopened'),
-    ]
-
+# --- REPAIR ATTEMPTS ---
+class RepairAttempt(models.Model):
     incident = models.ForeignKey(
         Incident,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name='repairs'
+        on_delete=models.CASCADE,
+        related_name='repair_attempts'
     )
-    completion_date = models.DateField()
-    location = models.CharField(max_length=255)
-
-    REPAIR_TYPES = [
-        ('rodding', 'Rodding / Unblocking'),
-        ('jetting', 'High-Pressure Jetting'),
-        ('pipe_replacement', 'Pipe Replacement'),
-        ('manhole_repair', 'Manhole / Cover Repair'),
-        ('other', 'Other')
-    ]
-    repair_type = models.CharField(max_length=50, choices=REPAIR_TYPES, default='other')
-    scope_of_work = models.TextField(help_text="Describe the exact work performed")
-    materials_used = models.TextField(blank=True, help_text="Manually list materials used (e.g., 2 PVC pipes, 1 bag cement)")
-    technician = models.ForeignKey(
+    attempt_number = models.PositiveIntegerField()
+    work_performed = models.TextField()
+    materials_used = models.TextField(blank=True)
+    attendant = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
         null=True,
-        related_name='repairs_technician'
+        related_name='repair_attempts'
     )
-    supervisor = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.SET_NULL,
-        null=True,
-        related_name='repairs_supervisor'
-    )
-    supervisor_signature = models.ImageField(upload_to='signatures/', null=True, blank=True)
-
-    # State machine
-    status = models.CharField(max_length=20, choices=REPAIR_STATUS, default='created')
-    started_at = models.DateTimeField(null=True, blank=True)
-    completed_at = models.DateTimeField(null=True, blank=True)
-    certified_at = models.DateTimeField(null=True, blank=True)
-    certified_by = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name='repairs_certified'
-    )
-    follow_up_required = models.BooleanField(default=False)
-
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+    submitted_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        ordering = ['-completion_date', '-created_at']
+        unique_together = ('incident', 'attempt_number')
+        ordering = ['attempt_number']
 
     def __str__(self):
-        return f"Repair #{self.id} - {self.location} ({self.completion_date})"
+        return f"{self.incident.incident_number} attempt {self.attempt_number}"
 
 
 # --- INSPECTION MODELS ---
@@ -826,8 +787,11 @@ class PatrolRow(models.Model):
 
     weekly_patrol = models.ForeignKey(WeeklyLinePatrol, on_delete=models.CASCADE, related_name='rows')
     time = models.TimeField()
+    sewer_line = models.ForeignKey('SewerLine', on_delete=models.SET_NULL, null=True, blank=True, related_name='patrol_rows')
     sewer_line_section = models.ForeignKey(SewerLineSection, on_delete=models.PROTECT, related_name='patrol_rows')
     sewer_line_ref_text = models.CharField(max_length=100)
+    sewer_line_ref_manual = models.CharField(max_length=150, blank=True)
+    is_manual_entry = models.BooleanField(default=False)
     abnormality_observed = models.CharField(max_length=50, choices=ABNORMALITY_CHOICES, default='none')
     abnormality_details = models.TextField(blank=True, help_text="Specify if 'Other' or add details (Section 5.4)")
     new_main_connections = models.PositiveIntegerField(default=0, help_text="New main connection found (Section 5.2)")
@@ -1315,7 +1279,12 @@ class PondYearlyTask(models.Model):
 class Zone(models.Model):
     """Zone or drainage area for organizing sewer lines and incident management."""
     name = models.CharField(max_length=255, unique=True)
+    zone_code = models.CharField(max_length=20, unique=True, null=True, blank=True)
     description = models.TextField(blank=True)
+    min_lat = models.FloatField(null=True, blank=True)
+    max_lat = models.FloatField(null=True, blank=True)
+    min_lon = models.FloatField(null=True, blank=True)
+    max_lon = models.FloatField(null=True, blank=True)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -1352,6 +1321,7 @@ class SewerLine(models.Model):
     diameter_mm = models.PositiveIntegerField(null=True, blank=True, help_text="Pipe diameter in millimeters")
     length_m = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, help_text="Length in meters")
     installation_date = models.DateField(null=True, blank=True)
+    patrol_frequency_per_month = models.PositiveIntegerField(default=4, help_text="Expected number of patrol submissions per month for this line")
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -1420,6 +1390,87 @@ class Notification(models.Model):
             self.is_read = True
             self.read_at = timezone.now()
             self.save(update_fields=['is_read', 'read_at'])
+
+
+class TeamMembership(models.Model):
+    supervisor = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='supervised_attendants',
+        limit_choices_to={'role': 'line_supervisor'}
+    )
+    attendant = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='team_memberships',
+        limit_choices_to={'role': 'line_attendant'}
+    )
+    zone = models.ForeignKey('Zone', on_delete=models.SET_NULL, null=True, blank=True)
+    assigned_from = models.DateField(auto_now_add=True)
+    assigned_to = models.DateField(null=True, blank=True)
+
+    class Meta:
+        unique_together = ('supervisor', 'attendant', 'assigned_to')
+        constraints = [
+            models.UniqueConstraint(
+                fields=['attendant'],
+                condition=models.Q(assigned_to__isnull=True),
+                name='unique_active_membership_per_attendant'
+            )
+        ]
+
+    @property
+    def is_active(self):
+        return self.assigned_to is None
+
+
+class Property(models.Model):
+    plot_number = models.CharField(max_length=50, blank=True)
+    owner_name = models.CharField(max_length=200)
+    zone = models.ForeignKey('Zone', on_delete=models.SET_NULL, null=True, blank=True)
+    nearest_sewer_line = models.ForeignKey('SewerLine', on_delete=models.SET_NULL, null=True, blank=True)
+    CONNECTION_STATUS_CHOICES = [
+        ('unconnected', 'Unconnected'),
+        ('applied', 'Application Submitted'),
+        ('approved', 'Approved'),
+        ('connected', 'Connected'),
+        ('rejected', 'Rejected'),
+    ]
+    connection_status = models.CharField(max_length=20, choices=CONNECTION_STATUS_CHOICES, default='unconnected')
+    connection_date = models.DateField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+
+class FieldMonthlyReport(models.Model):
+    month = models.PositiveIntegerField()
+    year = models.PositiveIntegerField()
+    supervisor = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='field_monthly_reports',
+        limit_choices_to={'role': 'line_supervisor'}
+    )
+    supervisor_notes = models.TextField(blank=True)
+    STATUS_CHOICES = [
+        ('draft', 'Draft'),
+        ('submitted', 'Submitted'),
+        ('acknowledged', 'Acknowledged'),
+    ]
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='draft')
+    submitted_at = models.DateTimeField(null=True, blank=True)
+    acknowledged_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='acknowledged_field_reports',
+        limit_choices_to={'role': 'stp_superintendent'}
+    )
+    acknowledged_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        unique_together = ('month', 'year', 'supervisor')
 
 
 class LabComplianceFlag(models.Model):

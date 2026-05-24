@@ -76,6 +76,7 @@ const IncidenceForm = () => {
     other_category: '', // Conditional: for other
     is_related_incident: false,
     related_incident_id: null,
+    override_reason: '',
     photos: [] // Multiple photos
   };
 
@@ -192,10 +193,29 @@ const IncidenceForm = () => {
   const handleSubmit = async (values, { setSubmitting, resetForm }) => {
     setSubmitStatus({ type: '', message: '' });
 
+    const suggestedSeverity = calculateSuggestedSeverity(
+      values.q1_spillage_public,
+      values.q2_multiple_properties
+    );
+    const finalSeverity = values.severity || suggestedSeverity;
+    const overrideReason = (values.override_reason || '').trim();
+
+    if (finalSeverity !== suggestedSeverity && !overrideReason) {
+      setSubmitStatus({
+        type: 'error',
+        message: 'Reason for override is required when selected priority differs from suggested priority.'
+      });
+      setSubmitting(false);
+      return;
+    }
+
     const payload = {
       reported_at: values.reported_at,
       category: values.category,
-      severity: values.severity,
+      severity: finalSeverity,
+      system_suggested_severity: suggestedSeverity,
+      final_severity: finalSeverity,
+      override_reason: finalSeverity !== suggestedSeverity ? overrideReason : '',
       location_text: values.location_text,
       latitude: values.latitude || null,
       longitude: values.longitude || null,
@@ -549,7 +569,14 @@ const IncidenceForm = () => {
               <div style={{ display: 'flex', gap: '8px' }}>
                 <button
                   type="button"
-                  onClick={() => setFieldValue('q1_spillage_public', true)}
+                  onClick={() => {
+                    const nextQ1 = true;
+                    const suggested = calculateSuggestedSeverity(nextQ1, values.q2_multiple_properties);
+                    setFieldValue('q1_spillage_public', nextQ1);
+                    if (!(values.override_reason || '').trim()) {
+                      setFieldValue('severity', suggested);
+                    }
+                  }}
                   style={{
                     padding: '8px 16px',
                     background: values.q1_spillage_public ? '#3B82F6' : '#e5e7eb',
@@ -564,7 +591,14 @@ const IncidenceForm = () => {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setFieldValue('q1_spillage_public', false)}
+                  onClick={() => {
+                    const nextQ1 = false;
+                    const suggested = calculateSuggestedSeverity(nextQ1, values.q2_multiple_properties);
+                    setFieldValue('q1_spillage_public', nextQ1);
+                    if (!(values.override_reason || '').trim()) {
+                      setFieldValue('severity', suggested);
+                    }
+                  }}
                   style={{
                     padding: '8px 16px',
                     background: !values.q1_spillage_public ? '#3B82F6' : '#e5e7eb',
@@ -587,7 +621,14 @@ const IncidenceForm = () => {
               <div style={{ display: 'flex', gap: '8px' }}>
                 <button
                   type="button"
-                  onClick={() => setFieldValue('q2_multiple_properties', true)}
+                  onClick={() => {
+                    const nextQ2 = true;
+                    const suggested = calculateSuggestedSeverity(values.q1_spillage_public, nextQ2);
+                    setFieldValue('q2_multiple_properties', nextQ2);
+                    if (!(values.override_reason || '').trim()) {
+                      setFieldValue('severity', suggested);
+                    }
+                  }}
                   style={{
                     padding: '8px 16px',
                     background: values.q2_multiple_properties ? '#3B82F6' : '#e5e7eb',
@@ -602,7 +643,14 @@ const IncidenceForm = () => {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setFieldValue('q2_multiple_properties', false)}
+                  onClick={() => {
+                    const nextQ2 = false;
+                    const suggested = calculateSuggestedSeverity(values.q1_spillage_public, nextQ2);
+                    setFieldValue('q2_multiple_properties', nextQ2);
+                    if (!(values.override_reason || '').trim()) {
+                      setFieldValue('severity', suggested);
+                    }
+                  }}
                   style={{
                     padding: '8px 16px',
                     background: !values.q2_multiple_properties ? '#3B82F6' : '#e5e7eb',

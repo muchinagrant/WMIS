@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
 from .models import (
-    User, Incident, Repair, Inspection, InspectionEntry,
+    User, Incident, RepairAttempt, Inspection, InspectionEntry,
     TreatmentLog, TreatmentParameter, Exhauster, ExhausterLicense,
     SludgeCollection, ConnectionReport, ConnectionApplication, DailyLabRecord,
     TreatmentPond, PondDailyLog, PondYearlyTask,
@@ -33,11 +33,11 @@ class IncidentAdmin(admin.ModelAdmin):
     list_filter = ('status', 'reported_at')
     search_fields = ('location_text', 'description', 'reported_by_name')
 
-@admin.register(Repair)
-class RepairAdmin(admin.ModelAdmin):
-    list_display = ('id', 'location', 'completion_date', 'technician', 'supervisor')
-    list_filter = ('completion_date',)
-    search_fields = ('location', 'scope_of_work', 'materials_used')
+@admin.register(RepairAttempt)
+class RepairAttemptAdmin(admin.ModelAdmin):
+    list_display = ('id', 'incident', 'attempt_number', 'attendant', 'submitted_at')
+    list_filter = ('submitted_at',)
+    search_fields = ('incident__incident_number', 'work_performed', 'materials_used')
 
 # --- 3. INFRASTRUCTURE INSPECTION ---
 class InspectionEntryInline(admin.TabularInline):

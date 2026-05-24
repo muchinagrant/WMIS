@@ -8,6 +8,7 @@ const MyTasksNew = () => {
     const [activeTab, setActiveTab] = useState('active');
     const [tasks, setTasks] = useState({
         active: [],
+        returned_for_revision: [],
         awaiting_certification: [],
         history: [],
     });
@@ -18,6 +19,7 @@ const MyTasksNew = () => {
     const { user } = useContext(AuthContext);
 
     const priorityColors = {
+        critical: '#DC2626',
         high: '#DC2626',
         medium: '#CA8A04',
         low: '#16A34A',
@@ -27,6 +29,7 @@ const MyTasksNew = () => {
         assigned: '#3B82F6',
         in_progress: '#F59E0B',
         pending_certification: '#8B5CF6',
+        revision_required: '#EF4444',
         closed: '#10B981',
     };
 
@@ -41,24 +44,25 @@ const MyTasksNew = () => {
         setLoading(true);
         try {
             const [myTasksResponse, historyResponse] = await Promise.all([
-                api.get('/api/incidents/my_tasks/'),
+                api.get('/api/incidents/my-tasks/'),
                 api.get(`/api/incidents/?assigned_to=${user.id}&status=closed`),
             ]);
 
             const myTasksList = Array.isArray(myTasksResponse.data) ? myTasksResponse.data : (myTasksResponse.data?.results || []);
             const assignedList = myTasksList.filter((t) => t.status === 'assigned');
             const inProgressList = myTasksList.filter((t) => t.status === 'in_progress');
-            const certificationList = myTasksList.filter((t) => t.status === 'pending_certification' || t.status === 'completed');
+            const returnedList = myTasksList.filter((t) => t.status === 'revision_required');
+            const certificationList = myTasksList.filter((t) => t.status === 'pending_certification');
             const historyList = Array.isArray(historyResponse.data) ? historyResponse.data : (historyResponse.data?.results || []);
 
             setTasks({
                 active: [...assignedList, ...inProgressList],
+                returned_for_revision: returnedList,
                 awaiting_certification: certificationList,
                 history: historyList,
             });
 
-            // Calculate unread count (active + awaiting cert)
-            setUnreadCount(assignedList.length + inProgressList.length + certificationList.length);
+            setUnreadCount(assignedList.length + inProgressList.length + returnedList.length + certificationList.length);
         } catch (error) {
             console.error('Failed to load tasks:', error);
         } finally {
@@ -68,9 +72,8 @@ const MyTasksNew = () => {
 
     const handleStartWork = async (taskId) => {
         try {
-            await api.patch(`/api/incidents/${taskId}/`, {
+            await api.post(`/api/incidents/${taskId}/update_status/`, {
                 status: 'in_progress',
-                in_progress_at: new Date().toISOString(),
             });
             loadTasks();
             setWorkingOnTask(null);
@@ -81,23 +84,9 @@ const MyTasksNew = () => {
 
     const handleMarkComplete = async (taskId, values) => {
         try {
-            const formData = new FormData();
-            formData.append('status', 'pending_certification');
-            formData.append('resolved_at', new Date().toISOString());
-            // Add completion details to description/notes if needed
-            if (values.work_performed) {
-                formData.append('work_performed', values.work_performed);
-            }
-
-            // Handle photo uploads
-            if (values.photos && values.photos.length > 0) {
-                values.photos.forEach((file, idx) => {
-                    formData.append(`photo_${idx}`, file);
-                });
-            }
-
-            await api.patch(`/api/incidents/${taskId}/`, formData, {
-                headers: { 'Content-Type': 'multipart/form-data' },
+            await api.post(`/api/incidents/${taskId}/submit_attempt/`, {
+                work_performed: values.work_performed,
+                materials_used: values.materials_used || '',
             });
 
             loadTasks();
@@ -117,9 +106,23 @@ const MyTasksNew = () => {
                     background: 'white',
                     cursor: 'pointer',
                     transition: 'all 0.3s',
-                    borderLeft: `4px solid ${priorityColors[task.severity] || '#6b7280'}`,
+                    borderLeft: tabName === 'returned_for_revision'
+                        ? '4px solid #DC2626'
+                        : `4px solid ${priorityColors[task.severity] || '#6b7280'}`,
                 }}
             >
+                {tabName === 'returned_for_revision' && (
+                    <div style={{ marginBottom: '10px' }}>
+                        <span style={{ background: '#fee2e2', color: '#991b1b', border: '1px solid #fecaca', borderRadius: '8px', padding: '4px 10px', fontSize: '0.8rem', fontWeight: 700 }}>
+                            Returned for Revision
+                        </span>
+                        {task.revision_reason && (
+                            <div style={{ marginTop: '8px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '6px', padding: '8px', color: '#991b1b', fontSize: '0.85rem' }}>
+                                <strong>Supervisor note:</strong> {task.revision_reason}
+                            </div>
+                        )}
+                    </div>
+                )}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '12px', marginBottom: '12px', alignItems: 'start' }}>
                     <div>
                         <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '6px' }}>
@@ -231,6 +234,25 @@ const MyTasksNew = () => {
                             <i className="fas fa-check-circle" style={{ marginRight: '4px' }}></i>Mark Complete
                         </button>
                     )}
+                    {tabName === 'returned_for_revision' && (
+                        <button
+                            onClick={() => setCompletingTask(task.id)}
+                            style={{
+                                flex: 1,
+                                minWidth: '120px',
+                                padding: '8px',
+                                background: '#dc2626',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '4px',
+                                cursor: 'pointer',
+                                fontWeight: 600,
+                                fontSize: '0.9rem',
+                            }}
+                        >
+                            <i className="fas fa-redo" style={{ marginRight: '4px' }}></i>Resubmit
+                        </button>
+                    )}
                 </div>
 
                 {/* Start Work Confirmation */}
@@ -278,6 +300,7 @@ const MyTasksNew = () => {
                 {/* Mark Complete Form */}
                 {completingTask === task.id && (
                     <CompletionForm
+                        task={task}
                         taskId={task.id}
                         onSubmit={(values) => handleMarkComplete(task.id, values)}
                         onCancel={() => setCompletingTask(null)}
@@ -287,16 +310,19 @@ const MyTasksNew = () => {
         );
     };
 
-    const CompletionForm = ({ taskId, onSubmit, onCancel }) => {
+    const CompletionForm = ({ task, taskId, onSubmit, onCancel }) => {
+        const latestAttempt = task?.repair_attempts?.length ? task.repair_attempts[task.repair_attempts.length - 1] : null;
         const completionSchema = Yup.object().shape({
             work_performed: Yup.string().required('Work performed description is required'),
+            materials_used: Yup.string(),
             photos: Yup.array(),
         });
 
         return (
             <Formik
                 initialValues={{
-                    work_performed: '',
+                    work_performed: latestAttempt?.work_performed || '',
+                    materials_used: latestAttempt?.materials_used || '',
                     photos: [],
                 }}
                 validationSchema={completionSchema}
@@ -328,6 +354,26 @@ const MyTasksNew = () => {
                                     }}
                                 />
                                 <ErrorMessage name="work_performed" render={(msg) => <div style={{ color: '#dc2626', fontSize: '0.85rem', marginTop: '4px' }}>{msg}</div>} />
+                            </div>
+
+                            <div style={{ marginBottom: '12px' }}>
+                                <label style={{ fontSize: '0.9rem', fontWeight: 600, marginBottom: '6px', display: 'block', color: '#065f46' }}>
+                                    Materials Used (Optional)
+                                </label>
+                                <Field
+                                    as="textarea"
+                                    name="materials_used"
+                                    placeholder="List materials used..."
+                                    style={{
+                                        width: '100%',
+                                        padding: '10px',
+                                        borderRadius: '4px',
+                                        border: '1px solid #86efac',
+                                        minHeight: '60px',
+                                        fontFamily: 'inherit',
+                                        fontSize: '0.9rem',
+                                    }}
+                                />
                             </div>
 
                             <div style={{ marginBottom: '12px' }}>
@@ -414,6 +460,7 @@ const MyTasksNew = () => {
         if (!tabTasks || tabTasks.length === 0) {
             const emptyMessages = {
                 active: 'No active tasks. You\'re all caught up! 🎉',
+                returned_for_revision: 'No returned tasks right now.',
                 awaiting_certification: 'No tasks awaiting certification.',
                 history: 'No completed tasks yet.',
             };
@@ -460,6 +507,7 @@ const MyTasksNew = () => {
             <div style={{ display: 'flex', gap: '8px', marginBottom: '25px', borderBottom: '1px solid #e2e8f0', flexWrap: 'wrap' }}>
                 {[
                     { id: 'active', label: 'Active', icon: 'fa-circle-play' },
+                    { id: 'returned_for_revision', label: 'Returned for Revision', icon: 'fa-rotate-left' },
                     { id: 'awaiting_certification', label: 'Awaiting Certification', icon: 'fa-clipboard-check' },
                     { id: 'history', label: 'My History', icon: 'fa-history' },
                 ].map((tab) => (
@@ -483,6 +531,11 @@ const MyTasksNew = () => {
                         {tab.id === 'active' && unreadCount > 0 && (
                             <span style={{ marginLeft: '6px', fontSize: '0.8rem', background: activeTab === tab.id ? 'rgba(255,255,255,0.3)' : '#dc2626', color: activeTab === tab.id ? 'white' : 'white', padding: '2px 6px', borderRadius: '10px' }}>
                                 {unreadCount}
+                            </span>
+                        )}
+                        {tab.id === 'returned_for_revision' && tasks.returned_for_revision.length > 0 && (
+                            <span style={{ marginLeft: '6px', fontSize: '0.8rem', background: '#dc2626', color: 'white', padding: '2px 6px', borderRadius: '10px' }}>
+                                {tasks.returned_for_revision.length}
                             </span>
                         )}
                     </button>
