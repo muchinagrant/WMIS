@@ -16,7 +16,7 @@ instance.interceptors.request.use(config => {
 
 export const wakeUpServer = async () => {
   try {
-    await instance.get('/api/incidents/', { timeout: 5000 });
+    await instance.get('/health/', { timeout: 10000 });
     console.log('Backend server is awake.');
   } catch (error) {
     console.log('Backend server is waking up...');

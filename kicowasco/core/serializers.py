@@ -23,10 +23,14 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         if isinstance(username, str):
             normalized_username = username.strip()
             if normalized_username:
-                matched_username = User.objects.filter(
-                    username__iexact=normalized_username
-                ).values_list('username', flat=True).first()
-                attrs[self.username_field] = matched_username or normalized_username
+                try:
+                    matched_username = User.objects.filter(
+                        username__iexact=normalized_username
+                    ).values_list('username', flat=True).first()
+                    attrs[self.username_field] = matched_username or normalized_username
+                except Exception:
+                    # Fallback to provided username if DB lookup fails
+                    attrs[self.username_field] = normalized_username
 
         return super().validate(attrs)
 
